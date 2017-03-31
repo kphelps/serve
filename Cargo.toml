@@ -5,3 +5,5 @@ authors = ["Kyle Phelps <kphelps@salsify.com>"]
 
 [dependencies]
 nom = "^2.2"
+
+tempfile = "*"
