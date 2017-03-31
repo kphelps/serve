@@ -1,0 +1,7 @@
+[package]
+name = "serve"
+version = "0.1.0"
+authors = ["Kyle Phelps <kphelps@salsify.com>"]
+
+[dependencies]
+nom = "^2.2"
