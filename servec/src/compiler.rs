@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::io::{Seek, SeekFrom, Write};
 use super::ast;
+use super::codegen;
 use super::parser;
 use super::source_file::SourceFile;
 use tempfile;
@@ -9,8 +10,8 @@ pub struct Compiler {
 
 }
 
-type CompilationUnit = Vec<ast::Statement>;
-type CompilerResult = Result<CompilationUnit, String>;
+type CompilationUnit = ast::AST;
+type CompilerResult = Result<String, String>;
 
 impl Compiler {
 
@@ -23,6 +24,7 @@ impl Compiler {
         SourceFile::load(path).map_err(stringify_err)
             .and_then(lex)
             .and_then(parser::parse)
+            .and_then(codegen::codegen)
     }
 
 }

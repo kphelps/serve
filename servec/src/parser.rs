@@ -2,7 +2,7 @@ use nom::{alphanumeric, IResult, is_digit};
 use std::str;
 use std::str::FromStr;
 use std::string::String;
-use super::ast::{Expression, FunctionParameter, Statement};
+use super::ast::{AST, Expression, FunctionParameter, Statement};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {
@@ -83,8 +83,8 @@ struct Parser {
 
 type ParserResult<T> = Result<T, String>;
 
-pub fn parse(tokens: Vec<Token>) -> ParserResult<Vec<Statement>> {
-    println!("Input: {:?}", tokens);
+pub fn parse(tokens: Vec<Token>) -> ParserResult<AST> {
+    trace!("Input: {:?}", tokens);
     Parser::new(tokens).parse()
 }
 
@@ -97,8 +97,8 @@ impl Parser {
         }
     }
 
-    fn parse(&mut self) -> ParserResult<Vec<Statement>> {
-        println!("parse()");
+    fn parse(&mut self) -> ParserResult<AST> {
+        trace!("parse()");
         let output = self.many(Parser::parse_statement)?;
         if !self.empty() {
             return Err(format!("Remaining input: {:?}", self.tokens));
@@ -107,14 +107,14 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> ParserResult<Statement> {
-        println!("parse_statement()");
+        trace!("parse_statement()");
         parse_first!(self,
             Parser::parse_application
         )
     }
 
     fn parse_application(&mut self) -> ParserResult<Statement> {
-        println!("parse_application()");
+        trace!("parse_application()");
         self.skip(&Token::Application());
         let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_application_context)?;
@@ -122,7 +122,7 @@ impl Parser {
     }
 
     fn parse_application_context(&mut self) -> ParserResult<Statement> {
-        println!("parse_application_context()");
+        trace!("parse_application_context()");
         parse_first!(self,
             Parser::parse_endpoint,
             Parser::parse_item_function_call
@@ -130,7 +130,7 @@ impl Parser {
     }
 
     fn parse_endpoint(&mut self) -> ParserResult<Statement> {
-        println!("parse_endpoint()");
+        trace!("parse_endpoint()");
         self.skip(&Token::Endpoint())?;
         let name = self.parse_identifier()?;
         let args = self.parse_function_parameters()?;
@@ -147,7 +147,7 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> ParserResult<Expression> {
-        println!("parse_expression()");
+        trace!("parse_expression()");
         parse_first!(self,
             Parser::parse_return,
             Parser::parse_function_call,
@@ -195,7 +195,7 @@ impl Parser {
     fn parse_function_parameters(&mut self)
         -> ParserResult<Vec<FunctionParameter>>
     {
-        println!("parse_function_parameters()");
+        trace!("parse_function_parameters()");
         self.skip(&Token::OpenParen())?;
         self.separated_with_until(
             Parser::parse_function_parameter,
@@ -207,7 +207,7 @@ impl Parser {
     fn parse_function_parameter(&mut self)
         -> ParserResult<FunctionParameter>
     {
-        println!("parse_function_parameter()");
+        trace!("parse_function_parameter()");
         let name = self.parse_identifier()?;
         self.skip(&Token::Colon())?;
         let type_name = self.parse_identifier()?;
@@ -215,7 +215,7 @@ impl Parser {
     }
 
     fn parse_identifier(&mut self) -> ParserResult<String> {
-        println!("parse_identifier()");
+        trace!("parse_identifier()");
         match self.consume()? {
             Token::Identifier(name) => Ok(name),
             token => self.error(token),
@@ -223,7 +223,7 @@ impl Parser {
     }
 
     fn parse_identifier_expression(&mut self) -> ParserResult<Expression> {
-        println!("parse_identifier_expression()");
+        trace!("parse_identifier_expression()");
         self.parse_identifier().map(Expression::Identifier)
     }
 
@@ -233,12 +233,12 @@ impl Parser {
         }
         let t = self.tokens[self.position].clone();
         self.position += 1;
-        println!("Consume: {:?}", t);
+        trace!("Consume: {:?}", t);
         Ok(t)
     }
 
     fn consume_n(&mut self, n: usize) -> ParserResult<Vec<Token>> {
-        println!("consume_n({:?})", n);
+        trace!("consume_n({:?})", n);
         let mut v = vec![];
         for _ in 0..n {
             v.push(self.consume()?);
@@ -251,7 +251,7 @@ impl Parser {
             return Err("EOF".to_string());
         }
         let t = &self.tokens[self.position];
-        println!("Peek: {:?}", t);
+        trace!("Peek: {:?}", t);
         Ok(t)
     }
 
@@ -262,7 +262,7 @@ impl Parser {
     }
 
     fn skip(&mut self, t: &Token) -> ParserResult<()> {
-        println!("skip({:?})", t);
+        trace!("skip({:?})", t);
         let found = self.peek()?.clone();
         if &found == t {
             self.consume();
@@ -275,7 +275,7 @@ impl Parser {
     fn many<F, T>(&mut self, f: F) -> ParserResult<Vec<T>>
         where F: Fn(&mut Parser) -> ParserResult<T>
     {
-        println!("many()");
+        trace!("many()");
         let mut v = vec![];
         loop {
             if self.empty() {
@@ -284,7 +284,7 @@ impl Parser {
             match f(self) {
                 Ok(value) => v.push(value),
                 Err(err) => {
-                    println!("many error: {:?}", err);
+                    trace!("many error: {:?}", err);
                     return Ok(v);
                 },
             }
@@ -294,7 +294,7 @@ impl Parser {
     fn many_until<F, T>(&mut self, f: F, t: Token) -> ParserResult<Vec<T>>
         where F: Fn(&mut Parser) -> ParserResult<T>
     {
-        println!("many_until()");
+        trace!("many_until()");
         let mut v = vec![];
         loop {
             if self.peek_for(&t) {
@@ -313,7 +313,7 @@ impl Parser {
     fn separated_with_until<F, T>(&mut self, f: F, sep: Token, end: Token) -> ParserResult<Vec<T>>
         where F: Fn(&mut Parser) -> ParserResult<T>
     {
-        println!("separated_with_until({:?}, {:?})", sep, end);
+        trace!("separated_with_until({:?}, {:?})", sep, end);
         let mut v = vec![];
         loop {
             if self.peek_for(&end) {
@@ -365,7 +365,7 @@ impl Parser {
     }
 }
 
-fn check_input(input: &str, expected: Vec<Statement>) {
+fn check_input(input: &str, expected: AST) {
     let lexed = lex(input.as_bytes()).to_result().unwrap();
     let parsed = parse(lexed).unwrap();
     assert_eq!(parsed, expected);

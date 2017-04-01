@@ -1,0 +1,19 @@
+[package]
+name = "serve"
+version = "0.1.0"
+authors = ["Kyle Phelps <kphelps@salsify.com>"]
+
+[features]
+default = ["aster/with-syntex", "syntex_syntax"]
+nightly = []
+
+[dependencies]
+aster = { version = "*", default_features = false }
+clap = "*"
+hyper = { git = "https://github.com/hyperium/hyper", branch = "master" }
+itertools = "*"
+log = "0.3"
+nom = "^2.2"
+syntex_syntax = { version = "*", optional = true }
+
+tempfile = "*"

@@ -29,3 +29,5 @@ pub enum Statement {
     Endpoint(String, Vec<FunctionParameter>, String, Vec<Expression>),
     ItemFunctionCall(String, Vec<Expression>),
 }
+
+pub type AST = Vec<Statement>;
