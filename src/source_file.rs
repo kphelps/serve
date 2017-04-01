@@ -3,7 +3,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::io::Result as IoResult;
 use tempfile;
 
-struct SourceFile {
+pub struct SourceFile {
     pub path: String,
     pub body: Vec<u8>,
 }
