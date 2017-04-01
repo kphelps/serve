@@ -4,6 +4,7 @@
 #[macro_use] extern crate nom;
 extern crate tempfile;
 
+mod ast;
 mod compiler;
 #[macro_use] mod helpers;
 mod parser;

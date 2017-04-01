@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::io::{Seek, SeekFrom, Write};
+use super::ast;
 use super::parser;
 use super::source_file::SourceFile;
 use tempfile;
@@ -8,7 +9,7 @@ pub struct Compiler {
 
 }
 
-type CompilationUnit = Vec<parser::Statement>;
+type CompilationUnit = Vec<ast::Statement>;
 type CompilerResult = Result<CompilationUnit, String>;
 
 impl Compiler {
@@ -19,15 +20,21 @@ impl Compiler {
     }
 
     pub fn compile(&self, path: &str) -> CompilerResult {
-        SourceFile::load(path)
-            .map_err(|e| { e.description().to_string() })
-            .and_then(|sf| {
-                parser::lex(&sf.body).to_result()
-                    .map_err(|e| { e.description().to_string() })
-            })
+        SourceFile::load(path).map_err(stringify_err)
+            .and_then(lex)
             .and_then(parser::parse)
     }
 
+}
+
+fn lex(sf: SourceFile) -> Result<Vec<parser::Token>, String> {
+    parser::lex(&sf.body).to_result().map_err(stringify_err)
+}
+
+fn stringify_err<E>(e: E) -> String
+    where E: Error
+{
+    e.description().to_string()
 }
 
 #[test]
