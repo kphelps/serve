@@ -1,0 +1,9 @@
+application App
+    host("127.0.0.1")
+    port(8080)
+
+    endpoint get "/"() -> String
+        return "Hello World!"
+    end
+
+end
