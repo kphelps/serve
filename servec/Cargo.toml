@@ -10,7 +10,6 @@ nightly = []
 [dependencies]
 aster = { version = "*", default_features = false }
 clap = "*"
-hyper = { git = "https://github.com/hyperium/hyper", branch = "master" }
 itertools = "*"
 log = "0.3"
 nom = "^2.2"
