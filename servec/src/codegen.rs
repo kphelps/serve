@@ -36,11 +36,21 @@ impl CodegenContext {
     }
 
     fn emit(self) -> String {
-        let main = AstBuilder::new().item().fn_("main")
-            .default_return()
-            .block().with_stmts(self.toplevel)
-            .build();
-        syntax::print::pprust::item_to_string(&main)
+        let builder = AstBuilder::new();
+        let module_attrs = vec![
+            builder.attr().inner().allow(vec!["non_snake_case"]),
+        ];
+        let top = vec![
+            builder.item().extern_crate("serve_runtime").build(),
+            builder.item().fn_("main")
+                .default_return()
+                .block().with_stmts(self.toplevel)
+                .build(),
+        ];
+        vec![
+            module_attrs.iter().map(|a| syntax::print::pprust::attr_to_string(a)).join("\n"),
+            top.iter().map(|i| syntax::print::pprust::item_to_string(i)).join("\n"),
+        ].iter().join("\n")
     }
 
     fn codegen(&mut self, ast: &AST) -> CodegenAction {
@@ -107,7 +117,7 @@ impl CodegenContext {
 
 fn create_app(name: &str) -> syntax::ast::Stmt {
     AstBuilder::new().stmt()
-        .let_id(name).expr().call()
+        .let_().mut_id(name).expr().call()
         .path().ids(vec![RT, "App", "new"]).build()
         .build()
 }

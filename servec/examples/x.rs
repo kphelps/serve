@@ -6,11 +6,7 @@ extern crate syntex_syntax as syntax;
 
 fn main() {
     let builder = aster::AstBuilder::new();
-    let stmt = builder.item().fn_("function")
-        .arg_id("x").ty().isize()
-        .arg_id("y").ty().isize()
-        .return_().isize()
-        .block().with_stmts(vec![])
+    let stmt = builder.item().extern_crate("function")
         .build()
     ;
 
