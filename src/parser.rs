@@ -30,7 +30,8 @@ impl FunctionParameter {
 #[derive(Debug, Eq, PartialEq)]
 pub enum Statement {
     Application(String, Vec<Statement>),
-    Endpoint(String, Vec<FunctionParameter>, String, Vec<Expression>)
+    Endpoint(String, Vec<FunctionParameter>, String, Vec<Expression>),
+    ItemFunctionCall(String, Vec<Expression>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -137,35 +138,42 @@ impl Parser {
 
     fn parse_statement(&mut self) -> ParserResult<Statement> {
         println!("parse_statement()");
-        match self.consume()? {
-            Token::Application() => self.parse_application(),
-            token => self.error(token),
-        }
-    }
-
-    fn parse_application_context(&mut self) -> ParserResult<Statement> {
-        println!("parse_application_context()");
-        match self.consume()? {
-            Token::Endpoint() => self.parse_endpoint(),
-            token => self.error(token),
-        }
+        parse_first!(self,
+            Parser::parse_application
+        )
     }
 
     fn parse_application(&mut self) -> ParserResult<Statement> {
         println!("parse_application()");
+        self.skip(&Token::Application());
         let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_application_context)?;
         Ok(Statement::Application(name, body))
     }
 
+    fn parse_application_context(&mut self) -> ParserResult<Statement> {
+        println!("parse_application_context()");
+        parse_first!(self,
+            Parser::parse_endpoint,
+            Parser::parse_item_function_call
+        )
+    }
+
     fn parse_endpoint(&mut self) -> ParserResult<Statement> {
         println!("parse_endpoint()");
+        self.skip(&Token::Endpoint())?;
         let name = self.parse_identifier()?;
         let args = self.parse_function_parameters()?;
         self.skip(&Token::RightArrow())?;
         let return_type = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_expression)?;
         Ok(Statement::Endpoint(name, args, return_type, body))
+    }
+
+    fn parse_item_function_call(&mut self) -> ParserResult<Statement> {
+        let name = self.parse_identifier()?;
+        let params = self.parse_function_call_arguments()?;
+        Ok(Statement::ItemFunctionCall(name, params))
     }
 
     fn parse_expression(&mut self) -> ParserResult<Expression> {
@@ -533,6 +541,48 @@ fn test_application_with_endpoint_with_multiline_body() {
                                 )
                             ]
                         ),
+                        Expression::Return(
+                            Box::new(Expression::FunctionCall(
+                                "another".to_string(),
+                                vec![]
+                            ))
+                        )
+                    ],
+                ),
+            ]
+        )]
+    )
+}
+
+#[test]
+fn test_application_with_host_port() {
+    check_input(
+        "
+        application App
+            host(\"127.0.0.1\")
+            port(8080)
+
+            endpoint get(id: Uuid) -> Model
+                return another()
+            end
+        end
+        ",
+        vec![Statement::Application(
+            "App".to_string(),
+            vec![
+                Statement::ItemFunctionCall(
+                    "host".to_string(),
+                    vec![Expression::StringLiteral("127.0.0.1".to_string())]
+                ),
+                Statement::ItemFunctionCall(
+                    "port".to_string(),
+                    vec![Expression::IntLiteral(8080)],
+                ),
+                Statement::Endpoint(
+                    "get".to_string(),
+                    vec![FunctionParameter::new("id", "Uuid")],
+                    "Model".to_string(),
+                    vec![
                         Expression::Return(
                             Box::new(Expression::FunctionCall(
                                 "another".to_string(),
