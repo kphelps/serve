@@ -2,6 +2,8 @@ application App
     host("127.0.0.1")
     port(8080)
 
+    define_action(show, GET, "/")
+
     endpoint get() -> String
         return "Hello World!"
     end

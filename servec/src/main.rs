@@ -18,6 +18,7 @@ mod compiler;
 #[macro_use] mod helpers;
 mod parser;
 mod source_file;
+mod static_environment;
 
 use compiler::Compiler;
 use std::env;

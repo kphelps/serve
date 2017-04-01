@@ -3,6 +3,7 @@ use itertools::Itertools;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use super::ast::*;
+use super::static_environment::StaticEnvironment;
 use syntax;
 use syntax::ptr::P;
 
@@ -13,10 +14,15 @@ type PExpr = P<syntax::ast::Expr>;
 
 const RT: &'static str = "serve_runtime";
 
+type StaticItemFunction = &'static Fn(&mut CodegenContext, &str, &Vec<Expression>) -> CodegenAction;
+
 struct CodegenContext {
     named_scope: Vec<String>,
     toplevel: Vec<syntax::ast::Stmt>,
     definitions: Vec<syntax::ast::Stmt>,
+
+    static_item_functions: HashMap<String, StaticItemFunction>,
+    static_environment: StaticEnvironment,
 }
 
 pub fn codegen(ast: AST) -> CodegenResult<String> {
@@ -32,6 +38,8 @@ impl CodegenContext {
             named_scope: Vec::new(),
             toplevel: Vec::new(),
             definitions: Vec::new(),
+            static_item_functions: HashMap::new(),
+            static_environment: StaticEnvironment::new(),
         }
     }
 
@@ -69,10 +77,14 @@ impl CodegenContext {
                 Ok(())
             },
             Statement::ItemFunctionCall(ref name, ref args) => {
-                let exprs = self.codegen_vec(&args, CodegenContext::codegen_expression)?;
-                let scope = self.get_scope()?;
-                self.toplevel.push(expr_to_stmt(create_method_call(&scope, name, exprs)));
-                Ok(())
+                if self.is_static_item_function(name) {
+                    self.handle_static_item_function(name, args)
+                } else {
+                    let exprs = self.codegen_vec(&args, CodegenContext::codegen_expression)?;
+                    let scope = self.get_scope()?;
+                    self.toplevel.push(expr_to_stmt(create_method_call(&scope, name, exprs)));
+                    Ok(())
+                }
             },
         }
     }
@@ -112,6 +124,28 @@ impl CodegenContext {
         where F: Fn(&mut CodegenContext, &T) -> CodegenResult<R>
     {
         v.iter().map(|node| f(self, node)).collect()
+    }
+
+    fn is_static_item_function(&self, name: &str) -> bool {
+        self.static_item_functions.contains_key(name)
+    }
+
+    fn handle_static_item_function(&mut self, name: &str, args: &Vec<Expression>)
+        -> CodegenAction
+    {
+        let f = self.get_static_item_function(name)?;
+        f(self, name, args)
+    }
+
+    fn get_static_item_function(&mut self, name: &str) -> CodegenResult<StaticItemFunction>
+    {
+        self.static_item_functions.get(name)
+            .map(|f| *f)
+            .ok_or(format!("Static function not found"))
+    }
+
+    fn register_static_item_function(&mut self, name: &str, f: StaticItemFunction) {
+        self.static_item_functions.insert(name.to_owned(), f);
     }
 }
 
