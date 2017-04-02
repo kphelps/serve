@@ -9,6 +9,7 @@ use super::helpers;
 pub enum Token {
     Application(),
     Endpoint(),
+    Serializer(),
     Return(),
     End(),
     RightArrow(),
@@ -27,6 +28,7 @@ named!(pub lex<Vec<Token>>,
     many0!(alt_complete!(
         kw0!("application", Application) |
         kw0!("endpoint", Endpoint) |
+        kw0!("serializer", Serializer) |
         kw0!("return", Return) |
         kw0!("end", End) |
         kw0!("->", RightArrow) |
@@ -110,7 +112,8 @@ impl Parser {
     fn parse_statement(&mut self) -> ParserResult<Statement> {
         trace!("parse_statement()");
         parse_first!(self,
-            Parser::parse_application
+            Parser::parse_application,
+            Parser::parse_serializer
         )
     }
 
@@ -126,6 +129,7 @@ impl Parser {
         trace!("parse_application_context()");
         parse_first!(self,
             Parser::parse_endpoint,
+            Parser::parse_serializer,
             Parser::parse_item_function_call
         )
     }
@@ -139,6 +143,14 @@ impl Parser {
         let return_type = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_expression)?;
         Ok(Statement::Endpoint(name, args, return_type, body))
+    }
+
+    fn parse_serializer(&mut self) -> ParserResult<Statement> {
+        trace!("parse_serializer()");
+        self.skip(&Token::Serializer())?;
+        let name = self.parse_identifier()?;
+        let body = self.until_end(Parser::parse_expression)?;
+        Ok(Statement::Serializer(name, body))
     }
 
     fn parse_item_function_call(&mut self) -> ParserResult<Statement> {

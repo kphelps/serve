@@ -27,6 +27,7 @@ impl FunctionParameter {
 pub enum Statement {
     Application(String, Vec<Statement>),
     Endpoint(String, Vec<FunctionParameter>, String, Vec<Expression>),
+    Serializer(String, Vec<Expression>),
     ItemFunctionCall(String, Vec<Expression>),
 }
 

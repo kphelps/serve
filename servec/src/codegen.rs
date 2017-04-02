@@ -83,6 +83,7 @@ impl CodegenContext {
             Statement::Endpoint(ref name, ref params, ref return_type, ref body) => {
                 let scope = self.get_scope()?;
                 let action = self.static_environment.lookup_action(name)?;
+                let response_serializer = self.static_environment.lookup_serializer(return_type)?;
                 let endpoint_name = format!("endpoint_{}_{}", scope, name);
                 self.toplevel.push(register_endpoint(
                     &scope,
@@ -90,7 +91,11 @@ impl CodegenContext {
                     &action.method,
                     &action.path
                 ));
-                self.definitions.push(create_endpoint_epilogue(&endpoint_name, return_type));
+                self.definitions.push(create_endpoint_epilogue(
+                    &endpoint_name,
+                    return_type,
+                    &response_serializer,
+                ));
                 self.definitions.push(create_endpoint(&endpoint_name/*, params, return_type, body*/));
                 self.definitions.push(create_endpoint_prologue(&endpoint_name, params));
                 Ok(())
@@ -103,6 +108,13 @@ impl CodegenContext {
                 let exprs = self.codegen_vec(&args, CodegenContext::codegen_expression)?;
                 let scope = self.get_scope()?;
                 self.toplevel.push(expr_to_stmt(create_method_call(&scope, name, exprs)));
+                Ok(())
+            },
+            Statement::Serializer(ref tipe, ref body) => {
+                let runtime_name = serializer_name(&self.full_scope(), tipe);
+                self.static_environment.register_serializer(tipe, &runtime_name);
+                let body_exprs = self.codegen_vec(&body, CodegenContext::codegen_expression)?;
+                self.definitions.push(create_serializer(&runtime_name, tipe, &body_exprs));
                 Ok(())
             },
         }
@@ -129,14 +141,20 @@ impl CodegenContext {
     fn with_scope<F, R>(&mut self, name: &str, f: F) -> CodegenResult<R>
         where F: Fn(&mut CodegenContext) -> CodegenResult<R>
     {
+        self.static_environment.push();
         self.named_scope.push(name.to_owned());
         let result = f(self);
         self.named_scope.pop();
+        self.static_environment.pop();
         result
     }
 
     fn get_scope(&self) -> CodegenResult<String> {
         Ok(self.named_scope.last().ok_or("No scope found".to_string())?.to_owned())
+    }
+
+    fn full_scope(&self) -> String {
+        self.named_scope.iter().join("_")
     }
 
     fn codegen_vec<T, F, R>(&mut self, v: &Vec<T>, f: F) -> CodegenResult<Vec<R>>
@@ -258,6 +276,7 @@ fn create_endpoint_prologue(
 fn create_endpoint_epilogue(
     endpoint_name: &str,
     return_type: &str,
+    serializer: &str,
 ) -> PItem {
     let builder = AstBuilder::new();
     builder.item().fn_(&endpoint_epilogue_name(endpoint_name))
@@ -265,15 +284,27 @@ fn create_endpoint_epilogue(
         .arg_id("user_response").ty().id(return_type)
         .default_return()
         .block()
+        .stmt().let_id("bytes").expr().call().id(serializer)
+            .arg().id("user_response")
+            .build()
         .build_expr(
             builder.expr().method_call("unwrap").build(
                 create_method_call(
                     "response",
                     "send",
-                    vec![builder.expr().method_call("as_bytes").lit().str("Hello World!").build()],
+                    vec![builder.expr().ref_().id("bytes")],
                 )
             ).build()
         )
+}
+
+fn register_endpoint(scope: &str, endpoint_name: &str, method: &str, path: &str) -> syntax::ast::Stmt {
+    let e = create_method_call(scope, "route", vec![
+        create_string_literal(method),
+        create_string_literal(path),
+        AstBuilder::new().expr().id(&endpoint_prologue_name(endpoint_name))
+    ]);
+    expr_to_stmt(e)
 }
 
 fn endpoint_prologue_name(name: &str) -> String {
@@ -284,13 +315,24 @@ fn endpoint_epilogue_name(name: &str) -> String {
     format!("epilogue_{}", name)
 }
 
-fn register_endpoint(scope: &str, endpoint_name: &str, method: &str, path: &str) -> syntax::ast::Stmt {
-    let e = create_method_call(scope, "route", vec![
-        create_string_literal(method),
-        create_string_literal(path),
-        AstBuilder::new().expr().id(&endpoint_prologue_name(endpoint_name))
-    ]);
-    expr_to_stmt(e)
+fn create_serializer(runtime_name: &str, tipe: &str, body: &Vec<PExpr>) -> PItem {
+    let builder = AstBuilder::new();
+    builder.item().fn_(runtime_name)
+        .arg_id("input").ty().id(tipe)
+        .return_().id("Vec<u8>")
+        .block()
+        .build_expr(
+            builder.expr()
+                .method_call("into_bytes")
+                    .method_call("to_string")
+                        .lit().str("Hello World!")
+                    .build()
+                .build()
+        )
+}
+
+fn serializer_name(scope: &str, name: &str) -> String {
+    format!("serializer_{}_{}", name, scope)
 }
 
 fn expr_to_stmt(expr: PExpr) -> syntax::ast::Stmt {

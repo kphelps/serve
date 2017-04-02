@@ -8,6 +8,7 @@ pub struct ActionDefinition {
 
 struct EnvironmentFrame {
     actions: HashMap<String, ActionDefinition>,
+    serializers: HashMap<String, String>,
 }
 
 pub struct StaticEnvironment {
@@ -21,6 +22,7 @@ impl StaticEnvironment {
         }
     }
 
+    // TODO: Error on duplicate
     pub fn register_action(&mut self, name: &str, method: &str, path: &str) {
         self.current_frame().actions
             .insert(name.to_string(), ActionDefinition::new(method, path));
@@ -29,6 +31,16 @@ impl StaticEnvironment {
     pub fn lookup_action(&mut self, name: &str) -> Result<ActionDefinition, String> {
         self.search_frames(|frame| frame.actions.get(name).map(Clone::clone))
             .ok_or(format!("Action '{:?}' not found", name))
+    }
+
+    // TODO: Error on duplicate
+    pub fn register_serializer(&mut self, type_name: &str, rt_name: &str) {
+        self.current_frame().serializers.insert(type_name.to_string(), rt_name.to_string());
+    }
+
+    pub fn lookup_serializer(&mut self, type_name: &str) -> Result<String, String> {
+        self.search_frames(|frame| frame.serializers.get(type_name).map(Clone::clone))
+            .ok_or(format!("Serializer for type '{:?}' not found", type_name))
     }
 
     pub fn current_frame(&mut self) -> &mut EnvironmentFrame {
@@ -61,6 +73,7 @@ impl EnvironmentFrame {
     fn new() -> Self {
         Self {
             actions: HashMap::new(),
+            serializers: HashMap::new(),
         }
     }
 }
