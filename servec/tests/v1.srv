@@ -3,8 +3,13 @@ application App
     port(8080)
 
     define_action(show, GET, "/")
+    define_action(create, POST, "/")
 
-    endpoint get() -> String
+    endpoint show() -> String
+        return "Hello World!"
+    end
+
+    endpoint create() -> String
         return "Hello World!"
     end
 

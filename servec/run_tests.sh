@@ -6,11 +6,14 @@ RESET=`tput sgr0`
 
 run_test() {
     printf "${RESET}Compiling $1... "
-    cargo run $1 > /dev/null 2>&1
+    OUTPUT=$(cargo run $1 2>&1)
     if [[ $? -eq 0 ]]; then
-        printf "${GREEN}Pass"
+        printf "${GREEN}PASS"
     else
-        printf "${RED}Fail"
+        printf "${RED}FAIL"
+        echo
+        echo
+        echo "${RESET}${OUTPUT}"
     fi
     echo "${RESET}"
 }

@@ -3,6 +3,7 @@ use std::str;
 use std::str::FromStr;
 use std::string::String;
 use super::ast::{AST, Expression, FunctionParameter, Statement};
+use super::helpers;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token {
@@ -68,7 +69,7 @@ named!(int_literal<i64>,
 named!(identifier<String>,
     map_res!(
         map_res!(
-            ws!(alphanumeric),
+            ws!(helpers::identifier),
             str::from_utf8
         ),
         FromStr::from_str

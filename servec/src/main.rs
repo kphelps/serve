@@ -1,4 +1,5 @@
 #![feature(trace_macros)]
+#![feature(slice_patterns)]
 
 #![cfg_attr(feature = "nightly", feature(rustc_private))]
 extern crate aster;
@@ -22,6 +23,7 @@ mod static_environment;
 
 use compiler::Compiler;
 use std::env;
+use std::process::exit;
 
 fn main() {
     let matches = clap_app!(myapp =>
@@ -38,6 +40,7 @@ fn main() {
             println!("{}", compiled.unwrap());
         } else {
             println!("{}", compiled.unwrap_err());
+            exit(1);
         }
     };
 }
