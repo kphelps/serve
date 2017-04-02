@@ -90,7 +90,9 @@ impl CodegenContext {
                     &action.method,
                     &action.path
                 ));
+                self.definitions.push(create_endpoint_epilogue(&endpoint_name, return_type));
                 self.definitions.push(create_endpoint(&endpoint_name/*, params, return_type, body*/));
+                self.definitions.push(create_endpoint_prologue(&endpoint_name, params));
                 Ok(())
             },
             Statement::ItemFunctionCall(ref name, ref args) => {
@@ -211,11 +213,56 @@ fn create_endpoint(
 ) -> PItem {
     let builder = AstBuilder::new();
     builder.item().fn_(name)
+        // TODO: Should take its _actual_ arguments
+        .with_args(vec![
+            builder.arg().id("request").ty().id("hyper::server::Request"),
+            builder.arg().id("response").ty().ref_().ty().id("hyper::server::Response"),
+            builder.arg().id("captures").ty().id("reroute::Captures"),
+        ])
+        .return_().id("String")
+        .block()
+        .build_expr(
+            builder.expr().method_call("to_string")
+                .build(create_string_literal("Hello World!"))
+                .build()
+        )
+}
+
+fn create_endpoint_prologue(
+    endpoint_name: &str,
+    args: &Vec<FunctionParameter>
+) -> PItem {
+    let builder = AstBuilder::new();
+    builder.item().fn_(&endpoint_prologue_name(endpoint_name))
         .with_args(vec![
             builder.arg().id("request").ty().id("hyper::server::Request"),
             builder.arg().id("response").ty().id("hyper::server::Response"),
             builder.arg().id("captures").ty().id("reroute::Captures"),
         ])
+        .default_return()
+        .block()
+        // TODO: Transform request data to function's arguments
+        .stmt().let_id("user_response").expr().call().id(endpoint_name)
+            .arg().id("request")
+            .arg().ref_().id("response")
+            .arg().id("captures")
+            .build()
+        .build_expr(
+            builder.expr().call().id(&endpoint_epilogue_name(endpoint_name))
+                .arg().id("response")
+                .arg().id("user_response")
+                .build()
+        )
+}
+
+fn create_endpoint_epilogue(
+    endpoint_name: &str,
+    return_type: &str,
+) -> PItem {
+    let builder = AstBuilder::new();
+    builder.item().fn_(&endpoint_epilogue_name(endpoint_name))
+        .arg_id("response").ty().id("hyper::server::Response")
+        .arg_id("user_response").ty().id(return_type)
         .default_return()
         .block()
         .build_expr(
@@ -229,11 +276,19 @@ fn create_endpoint(
         )
 }
 
-fn register_endpoint(scope: &str, name: &str, method: &str, path: &str) -> syntax::ast::Stmt {
+fn endpoint_prologue_name(name: &str) -> String {
+    format!("prologue_{}", name)
+}
+
+fn endpoint_epilogue_name(name: &str) -> String {
+    format!("epilogue_{}", name)
+}
+
+fn register_endpoint(scope: &str, endpoint_name: &str, method: &str, path: &str) -> syntax::ast::Stmt {
     let e = create_method_call(scope, "route", vec![
         create_string_literal(method),
         create_string_literal(path),
-        AstBuilder::new().expr().id(name)
+        AstBuilder::new().expr().id(&endpoint_prologue_name(endpoint_name))
     ]);
     expr_to_stmt(e)
 }
