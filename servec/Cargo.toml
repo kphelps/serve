@@ -13,6 +13,7 @@ clap = "*"
 itertools = "*"
 log = "0.3"
 nom = "^2.2"
+serve_runtime = { path = "../serve_runtime" }
 syntex_syntax = { version = "*", optional = true }
 
 tempfile = "*"

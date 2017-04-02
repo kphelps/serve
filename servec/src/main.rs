@@ -7,6 +7,7 @@ extern crate aster;
 #[macro_use] extern crate itertools;
 #[macro_use] extern crate log;
 #[macro_use] extern crate nom;
+extern crate serve_runtime;
 extern crate tempfile;
 #[cfg(feature = "nightly")]
 extern crate syntax;

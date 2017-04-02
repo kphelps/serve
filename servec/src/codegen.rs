@@ -2,6 +2,7 @@ use aster::AstBuilder;
 use itertools::Itertools;
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use serve_runtime::{exposed, ExposedFunctionRegistry, TypeSignature};
 use super::ast::*;
 use super::static_environment::StaticEnvironment;
 use syntax;
@@ -18,12 +19,28 @@ const RT: &'static str = "serve_runtime";
 type StaticItemFunction = Fn(&mut CodegenContext, &Vec<Expression>) -> CodegenAction + Send + Sync;
 type BoxedStaticItemFunction = Box<StaticItemFunction>;
 
+#[derive(Clone)]
+struct Scope {
+    name: String,
+    tipe: String,
+}
+
+impl Scope {
+    fn new(tipe: &str, name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tipe: tipe.to_string(),
+        }
+    }
+}
+
 struct CodegenContext {
-    named_scope: Vec<String>,
+    named_scope: Vec<Scope>,
     definitions: Vec<PItem>,
     toplevel: Vec<syntax::ast::Stmt>,
     last: Vec<syntax::ast::Stmt>,
 
+    exposed_registry: ExposedFunctionRegistry,
     static_environment: StaticEnvironment,
 }
 
@@ -42,6 +59,7 @@ impl CodegenContext {
             toplevel: Vec::new(),
             last: Vec::new(),
 
+            exposed_registry: exposed(),
             static_environment: StaticEnvironment::new(),
         }
     }
@@ -76,17 +94,17 @@ impl CodegenContext {
             Statement::Application(ref name, ref body) => {
                 self.last.push(expr_to_stmt(create_method_call(name, "start", vec![])));
                 self.toplevel.push(create_app(name));
-                self.with_scope(name, |ctx| {
+                self.with_scope("application", name, |ctx| {
                     ctx.codegen_vec(body, CodegenContext::codegen_statement)
                 }).and(Ok(()))
             },
             Statement::Endpoint(ref name, ref params, ref return_type, ref body) => {
-                let scope = self.get_scope()?;
+                let scope = self.get_scope()?.clone();
                 let action = self.static_environment.lookup_action(name)?;
                 let response_serializer = self.static_environment.lookup_serializer(return_type)?;
-                let endpoint_name = format!("endpoint_{}_{}", scope, name);
+                let endpoint_name = format!("endpoint_{}_{}", scope.name, name);
                 self.toplevel.push(register_endpoint(
-                    &scope,
+                    &scope.name,
                     &endpoint_name,
                     &action.method,
                     &action.path
@@ -106,12 +124,23 @@ impl CodegenContext {
                     return res;
                 }
                 let exprs = self.codegen_vec(&args, CodegenContext::codegen_expression)?;
-                let scope = self.get_scope()?;
-                self.toplevel.push(expr_to_stmt(create_method_call(&scope, name, exprs)));
-                Ok(())
+                let scope = self.get_scope()?.clone();
+                let func_signature = self.get_exposed_function(&scope.tipe, name);
+                if func_signature.is_some() {
+                    self.toplevel.push(expr_to_stmt(create_method_call(&scope.name, name, exprs)));
+                    Ok(())
+                } else {
+                    Err(
+                        format!(
+                            "Function '{}' not found in '{}' scope",
+                            name,
+                            scope.tipe
+                        ).to_string()
+                    )
+                }
             },
             Statement::Serializer(ref tipe, ref body) => {
-                let runtime_name = serializer_name(&self.full_scope(), tipe);
+                let runtime_name = serializer_name(&self.full_scope_name(), tipe);
                 self.static_environment.register_serializer(tipe, &runtime_name);
                 let body_exprs = self.codegen_vec(&body, CodegenContext::codegen_expression)?;
                 self.definitions.push(create_serializer(&runtime_name, tipe, &body_exprs));
@@ -138,23 +167,27 @@ impl CodegenContext {
         }
     }
 
-    fn with_scope<F, R>(&mut self, name: &str, f: F) -> CodegenResult<R>
+    fn with_scope<F, R>(&mut self, scope_type: &str, name: &str, f: F) -> CodegenResult<R>
         where F: Fn(&mut CodegenContext) -> CodegenResult<R>
     {
         self.static_environment.push();
-        self.named_scope.push(name.to_owned());
+        self.named_scope.push(Scope::new(scope_type, name));
         let result = f(self);
         self.named_scope.pop();
         self.static_environment.pop();
         result
     }
 
-    fn get_scope(&self) -> CodegenResult<String> {
-        Ok(self.named_scope.last().ok_or("No scope found".to_string())?.to_owned())
+    fn get_scope(&self) -> CodegenResult<&Scope> {
+        Ok(self.named_scope.last().ok_or("No scope found".to_string())?)
     }
 
-    fn full_scope(&self) -> String {
-        self.named_scope.iter().join("_")
+    fn full_scope_name(&self) -> String {
+        self.named_scope.iter().map(|s| s.name.clone()).join("_")
+    }
+
+    fn get_exposed_function(&self, scope_type: &str, name: &str) -> Option<TypeSignature> {
+        self.exposed_registry.lookup_scope(scope_type, name).map(Clone::clone)
     }
 
     fn codegen_vec<T, F, R>(&mut self, v: &Vec<T>, f: F) -> CodegenResult<Vec<R>>
