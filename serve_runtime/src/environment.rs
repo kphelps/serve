@@ -23,16 +23,16 @@ impl<T: 'static> Key for EnvironmentKey<T> {
     type Value = TypeEnvironment<T>;
 }
 
-pub struct Environment {
+pub struct Env {
     types: TypeMap,
 }
 
-pub struct EnvironmentReference<T> {
+pub struct EnvRef<T> {
     index: usize,
     phantom: PhantomData<T>,
 }
 
-impl<T: 'static> EnvironmentReference<T> {
+impl<T: 'static> EnvRef<T> {
     fn new(index: usize) -> Self {
         Self {
             index: index,
@@ -40,13 +40,13 @@ impl<T: 'static> EnvironmentReference<T> {
         }
     }
 
-    pub fn lookup(&self, env: &mut Environment) -> Rc<T>
+    pub fn lookup(&self, env: &mut Env) -> Rc<T>
     {
         env.types.get::<EnvironmentKey<T>>().unwrap().arena.get(self.index).unwrap().clone()
     }
 }
 
-impl Environment {
+impl Env {
 
     pub fn new() -> Self {
         Self {
@@ -54,13 +54,13 @@ impl Environment {
         }
     }
 
-    pub fn allocate<T, R>(&mut self, value: R) -> EnvironmentReference<T>
+    pub fn allocate<T, R>(&mut self, value: R) -> EnvRef<T>
         where T: 'static + ServeType + Constructible,
               R: Into<T::Inner>
     {
         let type_env = self.types.entry::<EnvironmentKey<T>>()
             .or_insert_with(|| TypeEnvironment::new());
-        let env_ref = EnvironmentReference::new(type_env.arena.len());
+        let env_ref = EnvRef::new(type_env.arena.len());
         type_env.arena.push(Rc::new(T::new(value)));
         env_ref
     }
@@ -69,7 +69,7 @@ impl Environment {
 
 #[test]
 fn test_allocate() {
-    let mut env = Environment::new();
+    let mut env = Env::new();
     let sref = env.allocate::<ServeString>("test".to_string());
     assert_eq!(sref.lookup(&mut env).value(), "test");
 }

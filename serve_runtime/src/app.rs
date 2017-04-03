@@ -2,6 +2,8 @@ use hyper::Server;
 use hyper::server::{Request, Response};
 use reroute::{Captures, RouterBuilder};
 use std::str::FromStr;
+use super::environment::{Env, EnvRef};
+use super::types::{ServeInt64, ServeString};
 use super::exposed_function_registry::ExposedFunctionRegistry;
 
 pub struct App {
@@ -20,18 +22,26 @@ impl App {
         }
     }
 
+    pub fn with_env<F>(&mut self, f: F)
+        where F: Fn(&mut Env, &mut App)
+    {
+        let mut env = Env::new();
+        f(&mut env, self);
+    }
+
     pub fn start(self) {
         let router = self.router_builder.finalize().unwrap();
+        println!("Running application on {}:{}", self.host, self.port);
         Server::http(format!("{}:{}", self.host, self.port)).unwrap()
             .handle(router).unwrap();
     }
 
-    pub fn host(&mut self, new_host: &str) {
-        self.host = new_host.to_string();
+    pub fn host(&mut self, env: &mut Env, new_host: EnvRef<ServeString>) {
+        self.host = new_host.lookup(env).value().to_string();
     }
 
-    pub fn port(&mut self, new_port: i64) {
-        self.port = new_port as u16;
+    pub fn port(&mut self, env: &mut Env, new_port: EnvRef<ServeInt64>) {
+        self.port = new_port.lookup(env).value().clone() as u16;
     }
 
     pub fn route<H>(

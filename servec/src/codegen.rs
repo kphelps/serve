@@ -24,10 +24,9 @@ const RT: &'static str = "serve_runtime";
 type StaticItemFunction = Fn(&mut CodegenContext, &Vec<Expression>) -> CodegenAction + Send + Sync;
 type BoxedStaticItemFunction = Box<StaticItemFunction>;
 
-const ENV_TYPE: &'static str = "serve_runtime::environment::Environment";
-const CREATE_ENV: &'static str = "serve_runtime::environment::Environment::new";
-const SERVE_REF: &'static str = "serve_runtime::environment::EnvironmentReference";
-const SERVE_STRING_TYPE: &'static str = "serve_runtime::types::ServeString";
+const ENV_TYPE: &'static str = "serve_runtime::environment::Env";
+const CREATE_ENV: &'static str = "serve_runtime::environment::Env::new";
+const SERVE_REF: &'static str = "serve_runtime::environment::EnvRef";
 
 #[derive(Clone)]
 struct Scope {
@@ -44,14 +43,90 @@ impl Scope {
     }
 }
 
+struct TopLevelInitializer {
+    tipe: String,
+    name: String,
+    body: Vec<syntax::ast::Stmt>,
+}
+
+impl TopLevelInitializer {
+    pub fn new(name: &str, tipe: &str) -> Self {
+        Self {
+            tipe: tipe.to_string(),
+            name: name.to_string(),
+            body: Vec::new(),
+        }
+    }
+
+    pub fn extend_body(&mut self, stmts: Vec<syntax::ast::Stmt>)
+    {
+        for stmt in stmts {
+            self.append_body(stmt);
+        }
+    }
+
+    pub fn append_body(&mut self, stmt: syntax::ast::Stmt) {
+        self.body.push(stmt);
+    }
+
+    pub fn codegen(&self)
+        -> CodegenResult<Vec<syntax::ast::Stmt>>
+    {
+        let mut statements = Vec::new();
+        statements.push(self.create_constructor()?);
+        statements.push(
+            AstBuilder::new().stmt().expr()
+                .method_call("with_env")
+                .id(&self.name)
+                .arg().closure().fn_decl()
+                    .arg_ref_mut_id("env").ty().infer()
+                    .arg_ref_mut_id(&self.name).ty().infer()
+                    .default_return()
+                    .expr().block()
+                    .with_stmts(self.body.clone())
+                    .build()
+                .build()
+        );
+        statements.push(expr_to_stmt(create_method_call(&self.name, "start", vec![])));
+        Ok(statements)
+    }
+
+    fn create_constructor(&self) -> CodegenResult<syntax::ast::Stmt> {
+        let result = match self.tipe.as_ref() {
+            "application" => create_app(&self.name),
+            _ => return Err(format!("Invalid initializer type '{}'", self.tipe)),
+        };
+        Ok(result)
+    }
+}
+
+struct TemporaryGenerator {
+    counter: usize,
+}
+
+impl TemporaryGenerator {
+    fn new() -> Self {
+        Self {
+            counter: 0,
+        }
+    }
+
+    fn temp(&mut self) -> String {
+        let result = format!("_serve_temp_{}", self.counter);
+        self.counter += 1;
+        result
+    }
+}
+
 struct CodegenContext {
     named_scope: Vec<Scope>,
     definitions: Vec<PItem>,
-    toplevel: Vec<syntax::ast::Stmt>,
+    initializers: HashMap<String, TopLevelInitializer>,
     last: Vec<syntax::ast::Stmt>,
 
     exposed_registry: ExposedFunctionRegistry,
     static_environment: StaticEnvironment,
+    temporaries: TemporaryGenerator,
 }
 
 pub fn codegen(ast: AST) -> CodegenResult<String> {
@@ -66,11 +141,12 @@ impl CodegenContext {
         Self {
             named_scope: Vec::new(),
             definitions: Vec::new(),
-            toplevel: Vec::new(),
+            initializers: HashMap::new(),
             last: Vec::new(),
 
             exposed_registry: exposed(),
             static_environment: StaticEnvironment::new(),
+            temporaries: TemporaryGenerator::new(),
         }
     }
 
@@ -78,17 +154,17 @@ impl CodegenContext {
         let builder = AstBuilder::new();
         let module_attrs = vec![
             builder.attr().inner().allow(vec!["non_snake_case"]),
+            builder.attr().inner().allow(vec!["unused_variables"]),
         ];
         let mut items = Vec::new();
         items.push(builder.item().extern_crate("hyper").build());
         items.push(builder.item().extern_crate("reroute").build());
         items.push(builder.item().extern_crate("serve_runtime").build());
         items.append(&mut self.definitions);
-        let main = builder.item().fn_("main").default_return().block()
-            .with_stmts(self.toplevel)
-            .with_stmts(self.last)
-            .build();
-        items.push(main);
+        let main = self.initializers.iter().fold(
+            builder.item().fn_("main").default_return().block(),
+            |acc, (_, initializer)| { acc.with_stmts(initializer.codegen().unwrap()) });
+        items.push(main.build());
         vec![
             module_attrs.iter().map(|a| syntax::print::pprust::attr_to_string(a)).join("\n"),
             items.iter().map(|i| syntax::print::pprust::item_to_string(i)).join("\n"),
@@ -102,11 +178,13 @@ impl CodegenContext {
     fn codegen_statement(&mut self, statement: &Statement) -> CodegenAction {
         match *statement {
             Statement::Application(ref name, ref body) => {
-                self.last.push(expr_to_stmt(create_method_call(name, "start", vec![])));
-                self.toplevel.push(create_app(name));
+                assert!(self.get_scope().is_err());
+                let initializer = TopLevelInitializer::new(name, "application");
+                self.initializers.insert(name.to_string(), initializer);
                 self.with_scope("application", name, |ctx| {
                     ctx.codegen_vec(body, CodegenContext::codegen_statement)
-                }).and(Ok(()))
+                })?;
+                Ok(())
             },
             Statement::Endpoint(ref name, ref params, ref return_type, ref body) => {
                 let scope = self.get_scope()?.clone();
@@ -114,7 +192,9 @@ impl CodegenContext {
                 let action = self.static_environment.lookup_action(name)?;
                 let response_serializer = self.static_environment.lookup_serializer(return_type)?;
                 let endpoint_name = format!("endpoint_{}_{}", scope.name, name);
-                self.toplevel.push(register_endpoint(
+                let initializer = self.initializers.get_mut(&scope.name)
+                    .ok_or("Initializer not found")?;
+                initializer.append_body(register_endpoint(
                     &scope.name,
                     &endpoint_name,
                     &action.method,
@@ -137,21 +217,15 @@ impl CodegenContext {
                 if res.is_ok() {
                     return res;
                 }
-                let exprs = self.codegen_vec(&args, CodegenContext::codegen_expression)?;
+                let (ids, stmts) = self.codegen_eval_args(&args)?;
                 let scope = self.get_scope()?.clone();
-                let func_signature = self.get_exposed_function(&scope.tipe, name);
-                if func_signature.is_some() {
-                    self.toplevel.push(expr_to_stmt(create_method_call(&scope.name, name, exprs)));
-                    Ok(())
-                } else {
-                    Err(
-                        format!(
-                            "Function '{}' not found in '{}' scope",
-                            name,
-                            scope.tipe
-                        ).to_string()
-                    )
-                }
+                let func_signature = self.get_exposed_function(&scope.tipe, name)
+                    .ok_or(format!("Function '{}' not found in '{}' scope", name, scope.tipe))?.clone();
+                let initializer = self.initializers.get_mut(&scope.name)
+                    .ok_or(format!("Initializer '{}' not found", scope.name))?;
+                initializer.extend_body(stmts);
+                initializer.append_body(expr_to_stmt(create_method_call_with_env(&scope.name, name, ids)));
+                Ok(())
             },
             Statement::Serializer(ref tipe, ref body) => {
                 let runtime_name = serializer_name(&self.full_scope_name(), tipe);
@@ -178,10 +252,24 @@ impl CodegenContext {
                 let to_return = self.codegen_expression(&expr)?;
                 Ok(create_return(to_return))
             }
-            Expression::IntLiteral(n) => Ok(create_int_literal(n)),
-            Expression::StringLiteral(ref s) => Ok(create_string_literal(s)),
+            Expression::IntLiteral(n) => Ok(create_serve_int_literal(n)),
+            Expression::StringLiteral(ref s) => Ok(create_serve_string_literal(s)),
             Expression::Identifier(ref id) => Ok(create_identifier(id)),
         }
+    }
+
+    fn codegen_eval_args(&mut self, args: &Vec<Expression>)
+        -> CodegenResult<(Vec<PExpr>, Vec<syntax::ast::Stmt>)>
+    {
+        let mut ids = Vec::new();
+        let mut stmts = Vec::new();
+        for arg in args {
+            let temp = self.temporaries.temp();
+            ids.push(create_identifier(&temp));
+            let expr = self.codegen_expression(arg)?;
+            stmts.push(create_assignment(&temp, expr));
+        }
+        Ok((ids, stmts))
     }
 
     fn with_scope<F, R>(&mut self, scope_type: &str, name: &str, f: F) -> CodegenResult<R>
@@ -253,10 +341,14 @@ fn create_app(name: &str) -> syntax::ast::Stmt {
 fn create_method_call(receiver: &str, name: &str, args: Vec<PExpr>)
     -> PExpr
 {
-    let call = AstBuilder::new().expr().method_call(name).id(receiver);
-    args.iter().fold(call, |acc, arg| {
-        acc.arg().build(arg.clone())
-    }).build()
+    AstBuilder::new().expr().method_call(name).id(receiver).with_args(args).build()
+}
+
+fn create_method_call_with_env(receiver: &str, name: &str, mut args: Vec<PExpr>)
+    -> PExpr
+{
+    args.insert(0, create_identifier("env"));
+    create_method_call(receiver, name, args)
 }
 
 fn create_call(name: &str, args: Vec<PExpr>) -> PExpr {
@@ -282,12 +374,24 @@ fn create_identifier(id: &str) -> PExpr {
     AstBuilder::new().expr().id(id)
 }
 
-fn create_serve_string_literal(s: &str) -> PExpr {
+fn create_assignment(id: &str, rhs: PExpr) -> syntax::ast::Stmt {
+    AstBuilder::new().stmt().let_id(id).build_expr(rhs)
+}
+
+fn allocate(to_allocate: PExpr) -> PExpr {
     AstBuilder::new().expr()
         .method_call("allocate")
         .id("env")
-        .arg().build(create_string_literal(s))
+        .arg().build(to_allocate)
         .build()
+}
+
+fn create_serve_int_literal(n: i64) -> PExpr {
+    allocate(create_int_literal(n))
+}
+
+fn create_serve_string_literal(s: &str) -> PExpr {
+    allocate(create_string_literal(s))
 }
 
 fn create_endpoint(
