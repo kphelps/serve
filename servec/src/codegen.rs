@@ -2,7 +2,12 @@ use aster::AstBuilder;
 use itertools::Itertools;
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use serve_runtime::{exposed, ExposedFunctionRegistry, TypeSignature};
+use serve_runtime::{
+    exposed,
+    ExposedFunctionRegistry,
+    ExposedType,
+    TypeSignature
+};
 use super::ast::*;
 use super::static_environment::StaticEnvironment;
 use syntax;
@@ -232,11 +237,9 @@ impl CodegenContext {
     }
 
     fn resolve_type(&self, name: &str) -> CodegenResult<&str> {
-        let rust_type = match name {
-            "String" => SERVE_STRING_TYPE,
-            _ => return Err(format!("Could not resolve type '{:?}'", name))
-        };
-        Ok(rust_type)
+        self.exposed_registry.lookup_type(name)
+            .map(ExposedType::get_rust_name)
+            .ok_or(format!("Could not resolve type '{}'", name))
     }
 }
 

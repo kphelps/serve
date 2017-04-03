@@ -8,9 +8,15 @@ pub mod environment;
 pub mod types;
 
 pub use app::App;
-pub use exposed_function_registry::ExposedFunctionRegistry;
-pub use exposed_function_registry::TypeSignature;
+pub use exposed_function_registry::{
+    ExposedFunctionRegistry,
+    ExposedType,
+    TypeSignature,
+};
 
 pub fn exposed() -> ExposedFunctionRegistry {
-    app::exposed()
+    let mut registry = ExposedFunctionRegistry::new();
+    app::expose(&mut registry);
+    types::expose(&mut registry);
+    registry
 }

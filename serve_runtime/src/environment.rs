@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::ops::Deref;
 use std::rc::Rc;
 use super::types::*;
 use typemap::{Key, TypeMap};
