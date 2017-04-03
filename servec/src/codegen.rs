@@ -19,6 +19,11 @@ const RT: &'static str = "serve_runtime";
 type StaticItemFunction = Fn(&mut CodegenContext, &Vec<Expression>) -> CodegenAction + Send + Sync;
 type BoxedStaticItemFunction = Box<StaticItemFunction>;
 
+const ENV_TYPE: &'static str = "serve_runtime::environment::Environment";
+const CREATE_ENV: &'static str = "serve_runtime::environment::Environment::new";
+const SERVE_REF: &'static str = "serve_runtime::environment::EnvironmentReference";
+const SERVE_STRING_TYPE: &'static str = "serve_runtime::types::ServeString";
+
 #[derive(Clone)]
 struct Scope {
     name: String,
@@ -100,6 +105,7 @@ impl CodegenContext {
             },
             Statement::Endpoint(ref name, ref params, ref return_type, ref body) => {
                 let scope = self.get_scope()?.clone();
+                let resolved_type = self.resolve_type(return_type)?.to_string();
                 let action = self.static_environment.lookup_action(name)?;
                 let response_serializer = self.static_environment.lookup_serializer(return_type)?;
                 let endpoint_name = format!("endpoint_{}_{}", scope.name, name);
@@ -111,10 +117,13 @@ impl CodegenContext {
                 ));
                 self.definitions.push(create_endpoint_epilogue(
                     &endpoint_name,
-                    return_type,
+                    &resolved_type,
                     &response_serializer,
                 ));
-                self.definitions.push(create_endpoint(&endpoint_name/*, params, return_type, body*/));
+                self.definitions.push(create_endpoint(
+                    &endpoint_name,
+                    &resolved_type,
+                ));
                 self.definitions.push(create_endpoint_prologue(&endpoint_name, params));
                 Ok(())
             },
@@ -141,9 +150,12 @@ impl CodegenContext {
             },
             Statement::Serializer(ref tipe, ref body) => {
                 let runtime_name = serializer_name(&self.full_scope_name(), tipe);
+                let resolved_type = self.resolve_type(tipe)?.to_string();
                 self.static_environment.register_serializer(tipe, &runtime_name);
-                let body_exprs = self.codegen_vec(&body, CodegenContext::codegen_expression)?;
-                self.definitions.push(create_serializer(&runtime_name, tipe, &body_exprs));
+                let body_exprs = self.with_scope("serializer", &runtime_name, |ctx| {
+                    ctx.codegen_vec(&body, CodegenContext::codegen_expression)
+                })?;
+                self.definitions.push(create_serializer(&runtime_name, &resolved_type, &body_exprs));
                 Ok(())
             },
         }
@@ -218,6 +230,14 @@ impl CodegenContext {
             _ => Err(format!("Invalid args for define_action")),
         }
     }
+
+    fn resolve_type(&self, name: &str) -> CodegenResult<&str> {
+        let rust_type = match name {
+            "String" => SERVE_STRING_TYPE,
+            _ => return Err(format!("Could not resolve type '{:?}'", name))
+        };
+        Ok(rust_type)
+    }
 }
 
 fn create_app(name: &str) -> syntax::ast::Stmt {
@@ -259,24 +279,30 @@ fn create_identifier(id: &str) -> PExpr {
     AstBuilder::new().expr().id(id)
 }
 
+fn create_serve_string_literal(s: &str) -> PExpr {
+    AstBuilder::new().expr()
+        .method_call("allocate")
+        .id("env")
+        .arg().build(create_string_literal(s))
+        .build()
+}
+
 fn create_endpoint(
     name: &str,
+    return_type: &str,
 ) -> PItem {
     let builder = AstBuilder::new();
     builder.item().fn_(name)
         // TODO: Should take its _actual_ arguments
         .with_args(vec![
+            builder.arg().ref_mut_id("env").ty().id(ENV_TYPE),
             builder.arg().id("request").ty().id("hyper::server::Request"),
             builder.arg().id("response").ty().ref_().ty().id("hyper::server::Response"),
             builder.arg().id("captures").ty().id("reroute::Captures"),
         ])
-        .return_().id("String")
+        .return_().id(ref_type(return_type))
         .block()
-        .build_expr(
-            builder.expr().method_call("to_string")
-                .build(create_string_literal("Hello World!"))
-                .build()
-        )
+        .build_expr(create_serve_string_literal("Hello World!"))
 }
 
 fn create_endpoint_prologue(
@@ -294,6 +320,7 @@ fn create_endpoint_prologue(
         .block()
         // TODO: Transform request data to function's arguments
         .stmt().let_id("user_response").expr().call().id(endpoint_name)
+            .arg().call().id(CREATE_ENV).build()
             .arg().id("request")
             .arg().ref_().id("response")
             .arg().id("captures")
@@ -314,7 +341,7 @@ fn create_endpoint_epilogue(
     let builder = AstBuilder::new();
     builder.item().fn_(&endpoint_epilogue_name(endpoint_name))
         .arg_id("response").ty().id("hyper::server::Response")
-        .arg_id("user_response").ty().id(return_type)
+        .arg_id("user_response").ty().id(ref_type(return_type))
         .default_return()
         .block()
         .stmt().let_id("bytes").expr().call().id(serializer)
@@ -351,7 +378,7 @@ fn endpoint_epilogue_name(name: &str) -> String {
 fn create_serializer(runtime_name: &str, tipe: &str, body: &Vec<PExpr>) -> PItem {
     let builder = AstBuilder::new();
     builder.item().fn_(runtime_name)
-        .arg_id("input").ty().id(tipe)
+        .arg_id("input").ty().id(ref_type(tipe))
         .return_().id("Vec<u8>")
         .block()
         .build_expr(
@@ -370,4 +397,8 @@ fn serializer_name(scope: &str, name: &str) -> String {
 
 fn expr_to_stmt(expr: PExpr) -> syntax::ast::Stmt {
     AstBuilder::new().stmt().build_expr(expr)
+}
+
+fn ref_type(tipe: &str) -> String {
+    format!("{}<{}>", SERVE_REF, tipe)
 }

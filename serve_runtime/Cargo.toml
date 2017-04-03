@@ -7,3 +7,4 @@ authors = ["Kyle Phelps <kphelps@salsify.com>"]
 hyper = "*"
 log = "*"
 reroute = "*"
+typemap = "*"
