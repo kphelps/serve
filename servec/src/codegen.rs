@@ -192,6 +192,7 @@ impl CodegenContext {
                 let action = self.static_environment.lookup_action(name)?;
                 let response_serializer = self.static_environment.lookup_serializer(return_type)?;
                 let endpoint_name = format!("endpoint_{}_{}", scope.name, name);
+                let body_exprs = self.codegen_body(body)?;
                 let initializer = self.initializers.get_mut(&scope.name)
                     .ok_or("Initializer not found")?;
                 initializer.append_body(register_endpoint(
@@ -208,6 +209,7 @@ impl CodegenContext {
                 self.definitions.push(create_endpoint(
                     &endpoint_name,
                     &resolved_type,
+                    &body_exprs,
                 ));
                 self.definitions.push(create_endpoint_prologue(&endpoint_name, params));
                 Ok(())
@@ -232,7 +234,7 @@ impl CodegenContext {
                 let resolved_type = self.resolve_type(tipe)?.to_string();
                 self.static_environment.register_serializer(tipe, &runtime_name);
                 let body_exprs = self.with_scope("serializer", &runtime_name, |ctx| {
-                    ctx.codegen_vec(&body, CodegenContext::codegen_expression)
+                    ctx.codegen_body(&body)
                 })?;
                 self.definitions.push(create_serializer(&runtime_name, &resolved_type, &body_exprs));
                 Ok(())
@@ -255,6 +257,12 @@ impl CodegenContext {
             Expression::IntLiteral(n) => Ok(create_serve_int_literal(n)),
             Expression::StringLiteral(ref s) => Ok(create_serve_string_literal(s)),
             Expression::Identifier(ref id) => Ok(create_identifier(id)),
+            Expression::MethodCall(ref receiver, ref name, ref args) => {
+                let receiver_expr = self.codegen_expression(receiver)?;
+                let args = self.codegen_vec(&args, CodegenContext::codegen_expression)?;
+                Ok(create_expr_method_call(receiver_expr, name, args))
+            },
+            ref a => Err(format!("Expression not implemented: {:?}", a)),
         }
     }
 
@@ -270,6 +278,12 @@ impl CodegenContext {
             stmts.push(create_assignment(&temp, expr));
         }
         Ok((ids, stmts))
+    }
+
+    fn codegen_body(&mut self, exprs: &Vec<Expression>)
+        -> CodegenResult<Vec<PExpr>>
+    {
+        self.codegen_vec(exprs, CodegenContext::codegen_expression)
     }
 
     fn with_scope<F, R>(&mut self, scope_type: &str, name: &str, f: F) -> CodegenResult<R>
@@ -338,10 +352,16 @@ fn create_app(name: &str) -> syntax::ast::Stmt {
         .build()
 }
 
+fn create_expr_method_call(receiver: PExpr, name: &str, args: Vec<PExpr>)
+    -> PExpr
+{
+    AstBuilder::new().expr().method_call(name).build(receiver).with_args(args).build()
+}
+
 fn create_method_call(receiver: &str, name: &str, args: Vec<PExpr>)
     -> PExpr
 {
-    AstBuilder::new().expr().method_call(name).id(receiver).with_args(args).build()
+    create_expr_method_call(create_identifier(receiver), name, args)
 }
 
 fn create_method_call_with_env(receiver: &str, name: &str, mut args: Vec<PExpr>)
@@ -397,8 +417,10 @@ fn create_serve_string_literal(s: &str) -> PExpr {
 fn create_endpoint(
     name: &str,
     return_type: &str,
+    body: &Vec<PExpr>,
 ) -> PItem {
     let builder = AstBuilder::new();
+    let body_stmts = body.iter().cloned().map(expr_to_stmt);
     builder.item().fn_(name)
         // TODO: Should take its _actual_ arguments
         .with_args(vec![
@@ -409,7 +431,8 @@ fn create_endpoint(
         ])
         .return_().id(ref_type(return_type))
         .block()
-        .build_expr(create_serve_string_literal("Hello World!"))
+        .with_stmts(body_stmts)
+        .build()
 }
 
 fn create_endpoint_prologue(

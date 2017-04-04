@@ -1,4 +1,5 @@
 use super::ExposedFunctionRegistry;
+use super::environment::{Env, EnvRef};
 
 pub trait ServeType {
 }
@@ -10,14 +11,28 @@ pub trait Constructible {
         where T: Into<Self::Inner>;
 }
 
+macro_rules! servify_name {
+    ($name:ident) => { serve_$name }
+}
+
+macro_rules! serve_fn {
+    ($name:ident($($arg:ident: $arg_type:ty),*) -> $return_type:ty $body:block) => {
+        fn $name(env: &mut Env, $($arg: EnvRef<$arg_type>),*) -> EnvRef<$return_type> {
+            $body
+        }
+    }
+}
+
 macro_rules! wrap_rust_type {
-    ($name:ident, $rt_name:ident, $rust_type:ty) => { wrap_rust_type!($name, $rt_name, $rust_type,); };
+    ($name:ident, $rt_name:ident, $rust_type:ty) => {
+        wrap_rust_type!($name, $rt_name, $rust_type,);
+    };
     (
         $name:ident,
         $runtime_name:ident,
         $rust_type:ty,
-        $($exposed_method:ident ( $($args:ty),* ) -> $return:ty),*
-    )  => {
+        $($exposed_methods:ident($($args:ty),*) -> $return:ty),*
+    ) => {
         #[derive(Debug, Eq, PartialEq)]
         pub struct $runtime_name {
             inner: $rust_type,
@@ -35,7 +50,7 @@ macro_rules! wrap_rust_type {
             expose_type_methods!(
                 $name,
                 serve_runtime::types::$runtime_name,
-                $($exposed_methods($($args:ty),*)),*
+                $($exposed_methods($($args),*) -> $return),*
             );
         }
 
@@ -57,7 +72,16 @@ macro_rules! wrap_rust_type {
     }
 }
 
-wrap_rust_type!(String, ServeString, String);
+wrap_rust_type!(String, ServeString, String,
+    string_to_bytes(ServeString) -> ServeBytes,
+    asdasd(ServeString) -> ServeBytes
+);
+
+serve_fn!(string_to_bytes(s: ServeString) -> ServeString {
+    println!("{:?}", s);
+    s
+});
+
 wrap_rust_type!(Int, ServeInt64, i64);
 
 pub fn expose(registry: &mut ExposedFunctionRegistry) {

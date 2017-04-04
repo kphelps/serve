@@ -127,7 +127,7 @@ macro_rules! expose_type_methods {
     (
         $serve_type:ident,
         $rust_type:ty,
-        $( $method_name:ident ( $($args:ty),* ) -> $return:ty ),*
+        $($method_name:ident($($args:ty),*) -> $return:ty ),*
     ) => {
         pub fn expose(registry: &mut $crate::ExposedFunctionRegistry) {
             registry.register_type(

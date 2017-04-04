@@ -4,6 +4,7 @@
 #![cfg_attr(feature = "nightly", feature(rustc_private))]
 extern crate aster;
 #[macro_use] extern crate clap;
+extern crate env_logger;
 #[macro_use] extern crate itertools;
 #[macro_use] extern crate log;
 #[macro_use] extern crate nom;
@@ -27,6 +28,8 @@ use std::env;
 use std::process::exit;
 
 fn main() {
+    env_logger::init().unwrap();
+
     let matches = clap_app!(myapp =>
         (version: "0.0-wayprealpha")
         (author: "Kyle Phelps <kylep91@gmail.com>")

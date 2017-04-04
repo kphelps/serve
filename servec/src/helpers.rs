@@ -38,16 +38,18 @@ macro_rules! kw1 {
 }
 
 macro_rules! parse_first {
-    ($parser:expr, $($subparsers:expr),+) => {{
+    ($parser:ident($($args:expr),*) $($subparsers:expr),+) => {{
+        let mut result = Err(format!("Could not match subparsers, remaining: {:?}", $parser.remaining()));
         for parser in [$($subparsers),+].iter() {
             $parser.checkpoint();
-            let result = parser($parser);
-            if result.is_ok() {
-                return result
+            let parser_result = parser($parser, $($args),*);
+            if parser_result.is_ok() {
+                result = parser_result;
+                break;
             }
             $parser.revert_checkpoint();
         };
-        Err(format!("Could not match subparsers, remaining: {:?}", $parser.remaining()))
+        result
     }}
 }
 

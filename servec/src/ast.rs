@@ -1,7 +1,8 @@
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Expression {
     FunctionCall(String, Vec<Expression>),
+    MethodCall(Box<Expression>, String, Vec<Expression>),
     Return(Box<Expression>),
     IntLiteral(i64),
     StringLiteral(String),

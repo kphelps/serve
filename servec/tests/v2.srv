@@ -12,7 +12,7 @@ application App
     define_action(create, POST, "/")
 
     endpoint show() -> String
-        return "Hello World!"
+        return "Hello World!".string_to_bytes()
     end
 
     endpoint create() -> String

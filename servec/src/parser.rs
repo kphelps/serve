@@ -1,3 +1,4 @@
+use env_logger;
 use nom::{alphanumeric, IResult, is_digit};
 use std::str;
 use std::str::FromStr;
@@ -16,6 +17,7 @@ pub enum Token {
     OpenParen(),
     CloseParen(),
     Comma(),
+    Period(),
     Colon(),
     OpenSquareBracket(),
     CloseSquareBracket(),
@@ -35,6 +37,7 @@ named!(pub lex<Vec<Token>>,
         kw0!("(", OpenParen) |
         kw0!(")", CloseParen) |
         kw0!(",", Comma) |
+        kw0!(".", Period) |
         kw0!(":", Colon) |
         kw0!("[", OpenSquareBracket) |
         kw0!("]", CloseSquareBracket) |
@@ -87,7 +90,7 @@ struct Parser {
 type ParserResult<T> = Result<T, String>;
 
 pub fn parse(tokens: Vec<Token>) -> ParserResult<AST> {
-    trace!("Input: {:?}", tokens);
+    debug!("Input: {:?}", tokens);
     Parser::new(tokens).parse()
 }
 
@@ -101,7 +104,7 @@ impl Parser {
     }
 
     fn parse(&mut self) -> ParserResult<AST> {
-        trace!("parse()");
+        debug!("parse()");
         let output = self.many(Parser::parse_statement)?;
         if !self.empty() {
             return Err(format!("Remaining input: {:?}", self.tokens));
@@ -110,15 +113,15 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> ParserResult<Statement> {
-        trace!("parse_statement()");
-        parse_first!(self,
+        debug!("parse_statement()");
+        parse_first!(self()
             Parser::parse_application,
             Parser::parse_serializer
         )
     }
 
     fn parse_application(&mut self) -> ParserResult<Statement> {
-        trace!("parse_application()");
+        debug!("parse_application()");
         self.skip(&Token::Application());
         let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_application_context)?;
@@ -126,8 +129,8 @@ impl Parser {
     }
 
     fn parse_application_context(&mut self) -> ParserResult<Statement> {
-        trace!("parse_application_context()");
-        parse_first!(self,
+        debug!("parse_application_context()");
+        parse_first!(self()
             Parser::parse_endpoint,
             Parser::parse_serializer,
             Parser::parse_item_function_call
@@ -135,7 +138,7 @@ impl Parser {
     }
 
     fn parse_endpoint(&mut self) -> ParserResult<Statement> {
-        trace!("parse_endpoint()");
+        debug!("parse_endpoint()");
         self.skip(&Token::Endpoint())?;
         let name = self.parse_identifier()?;
         let args = self.parse_function_parameters()?;
@@ -146,7 +149,7 @@ impl Parser {
     }
 
     fn parse_serializer(&mut self) -> ParserResult<Statement> {
-        trace!("parse_serializer()");
+        debug!("parse_serializer()");
         self.skip(&Token::Serializer())?;
         let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_expression)?;
@@ -160,13 +163,33 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> ParserResult<Expression> {
-        trace!("parse_expression()");
-        parse_first!(self,
+        debug!("parse_expression()");
+        let mut e = parse_first!(self()
             Parser::parse_return,
             Parser::parse_function_call,
             Parser::parse_identifier_expression,
             Parser::parse_int_literal,
             Parser::parse_string_literal
+        )?;
+
+        loop {
+            let result = self.parse_expression_with_predecessor(&e);
+            if result.is_err() {
+                break
+            } else {
+                e = result.unwrap();
+            }
+        }
+
+        Ok(e)
+    }
+
+    fn parse_expression_with_predecessor(&mut self, e: &Expression)
+        -> ParserResult<Expression>
+    {
+        debug!("parse_expression_with_predecessor({:?})", e);
+        parse_first!(self(e)
+            Parser::parse_method_call
         )
     }
 
@@ -190,6 +213,13 @@ impl Parser {
         Ok(Expression::Return(Box::new(return_expression)))
     }
 
+    fn parse_method_call(&mut self, receiver: &Expression) -> ParserResult<Expression> {
+        self.skip(&Token::Period())?;
+        let name = self.parse_identifier()?;
+        let params = self.parse_function_call_arguments()?;
+        Ok(Expression::MethodCall(Box::new(receiver.clone()), name, params))
+    }
+
     fn parse_function_call(&mut self) -> ParserResult<Expression> {
         let name = self.parse_identifier()?;
         let params = self.parse_function_call_arguments()?;
@@ -208,7 +238,7 @@ impl Parser {
     fn parse_function_parameters(&mut self)
         -> ParserResult<Vec<FunctionParameter>>
     {
-        trace!("parse_function_parameters()");
+        debug!("parse_function_parameters()");
         self.skip(&Token::OpenParen())?;
         self.separated_with_until(
             Parser::parse_function_parameter,
@@ -220,7 +250,7 @@ impl Parser {
     fn parse_function_parameter(&mut self)
         -> ParserResult<FunctionParameter>
     {
-        trace!("parse_function_parameter()");
+        debug!("parse_function_parameter()");
         let name = self.parse_identifier()?;
         self.skip(&Token::Colon())?;
         let type_name = self.parse_identifier()?;
@@ -228,7 +258,7 @@ impl Parser {
     }
 
     fn parse_identifier(&mut self) -> ParserResult<String> {
-        trace!("parse_identifier()");
+        debug!("parse_identifier()");
         match self.consume()? {
             Token::Identifier(name) => Ok(name),
             token => self.error(token),
@@ -236,7 +266,7 @@ impl Parser {
     }
 
     fn parse_identifier_expression(&mut self) -> ParserResult<Expression> {
-        trace!("parse_identifier_expression()");
+        debug!("parse_identifier_expression()");
         self.parse_identifier().map(Expression::Identifier)
     }
 
@@ -246,12 +276,12 @@ impl Parser {
         }
         let t = self.tokens[self.position].clone();
         self.position += 1;
-        trace!("Consume: {:?}", t);
+        debug!("Consume: {:?}", t);
         Ok(t)
     }
 
     fn consume_n(&mut self, n: usize) -> ParserResult<Vec<Token>> {
-        trace!("consume_n({:?})", n);
+        debug!("consume_n({:?})", n);
         let mut v = vec![];
         for _ in 0..n {
             v.push(self.consume()?);
@@ -264,7 +294,7 @@ impl Parser {
             return Err("EOF".to_string());
         }
         let t = &self.tokens[self.position];
-        trace!("Peek: {:?}", t);
+        debug!("Peek: {:?}", t);
         Ok(t)
     }
 
@@ -275,7 +305,7 @@ impl Parser {
     }
 
     fn skip(&mut self, t: &Token) -> ParserResult<()> {
-        trace!("skip({:?})", t);
+        debug!("skip({:?})", t);
         let found = self.peek()?.clone();
         if &found == t {
             self.consume();
@@ -288,7 +318,7 @@ impl Parser {
     fn many<F, T>(&mut self, f: F) -> ParserResult<Vec<T>>
         where F: Fn(&mut Parser) -> ParserResult<T>
     {
-        trace!("many()");
+        debug!("many()");
         let mut v = vec![];
         loop {
             if self.empty() {
@@ -297,7 +327,7 @@ impl Parser {
             match f(self) {
                 Ok(value) => v.push(value),
                 Err(err) => {
-                    trace!("many error: {:?}", err);
+                    debug!("many error: {:?}", err);
                     return Ok(v);
                 },
             }
@@ -307,7 +337,7 @@ impl Parser {
     fn many_until<F, T>(&mut self, f: F, t: Token) -> ParserResult<Vec<T>>
         where F: Fn(&mut Parser) -> ParserResult<T>
     {
-        trace!("many_until()");
+        debug!("many_until()");
         let mut v = vec![];
         loop {
             if self.peek_for(&t) {
@@ -326,7 +356,7 @@ impl Parser {
     fn separated_with_until<F, T>(&mut self, f: F, sep: Token, end: Token) -> ParserResult<Vec<T>>
         where F: Fn(&mut Parser) -> ParserResult<T>
     {
-        trace!("separated_with_until({:?}, {:?})", sep, end);
+        debug!("separated_with_until({:?}, {:?})", sep, end);
         let mut v = vec![];
         loop {
             if self.peek_for(&end) {
@@ -576,5 +606,100 @@ fn test_application_with_host_port() {
                 ),
             ]
         )]
+    )
+}
+
+#[test]
+fn test_serializer_with_method_call() {
+    env_logger::init().unwrap();
+    check_input(
+        "
+        serializer String
+            self.to_bytes(a, b)
+        end
+        ",
+        vec![
+            Statement::Serializer(
+                "String".to_string(),
+                vec![
+                    Expression::MethodCall(
+                        Box::new(Expression::Identifier("self".to_string())),
+                        "to_bytes".to_string(),
+                        vec![
+                            Expression::Identifier("a".to_string()),
+                            Expression::Identifier("b".to_string()),
+                        ]
+                    )
+                ]
+            )
+        ]
+   )
+}
+
+#[test]
+fn test_serializer_with_chained_method_call() {
+    check_input(
+        "
+        serializer String
+            self.reverse().to_bytes(a, b)
+        end
+        ",
+        vec![
+            Statement::Serializer(
+                "String".to_string(),
+                vec![
+                    Expression::MethodCall(
+                        Box::new(
+                            Expression::MethodCall(
+                                Box::new(Expression::Identifier("self".to_string())),
+                                "reverse".to_string(),
+                                vec![]
+                            )
+                        ),
+                        "to_bytes".to_string(),
+                        vec![
+                            Expression::Identifier("a".to_string()),
+                            Expression::Identifier("b".to_string()),
+                        ]
+                    )
+                ]
+            )
+        ]
+   )
+}
+
+#[test]
+fn test_endpoint_returns_method_call() {
+    check_input(
+        "
+        application App
+            endpoint show() -> String
+                return \"Hello World!\".string_to_bytes()
+            end
+        end
+        ",
+        vec![
+            Statement::Application(
+                "App".to_string(),
+                vec![
+                    Statement::Endpoint(
+                        "show".to_string(),
+                        vec![],
+                        "String".to_string(),
+                        vec![
+                            Expression::Return(
+                                Box::new(
+                                    Expression::MethodCall(
+                                        Box::new(Expression::StringLiteral("Hello World!".to_string())),
+                                        "string_to_bytes".to_string(),
+                                        vec![],
+                                    )
+                                )
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
     )
 }

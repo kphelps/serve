@@ -27,6 +27,7 @@ pub struct Env {
     types: TypeMap,
 }
 
+#[derive(Debug)]
 pub struct EnvRef<T> {
     index: usize,
     phantom: PhantomData<T>,
