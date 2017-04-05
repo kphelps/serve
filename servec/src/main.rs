@@ -23,6 +23,7 @@ mod parser;
 mod semantic;
 mod source_file;
 mod static_environment;
+mod symbol;
 
 use compiler::Compiler;
 use std::env;

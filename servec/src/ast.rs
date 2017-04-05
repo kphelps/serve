@@ -1,35 +1,36 @@
+use super::symbol::Symbol;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Expression {
-    FunctionCall(String, Vec<Expression>),
-    MethodCall(Box<Expression>, String, Vec<Expression>),
+    FunctionCall(Symbol, Vec<Expression>),
+    MethodCall(Box<Expression>, Symbol, Vec<Expression>),
     Return(Box<Expression>),
     IntLiteral(i64),
     StringLiteral(String),
-    Identifier(String),
+    Identifier(Symbol),
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FunctionParameter {
-    name: String,
-    tipe: String,
+    name: Symbol,
+    tipe: Symbol,
 }
 
 impl FunctionParameter {
-    pub fn new(name: &str, tipe: &str) -> FunctionParameter {
+    pub fn new(name: Symbol, tipe: Symbol) -> FunctionParameter {
         FunctionParameter {
-            name: name.to_owned(),
-            tipe: tipe.to_owned(),
+            name: name,
+            tipe: tipe,
         }
     }
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Statement {
-    Application(String, Vec<Statement>),
-    Endpoint(String, Vec<FunctionParameter>, String, Vec<Expression>),
-    Serializer(String, Vec<Expression>),
-    ItemFunctionCall(String, Vec<Expression>),
+    Application(Symbol, Vec<Statement>),
+    Endpoint(Symbol, Vec<FunctionParameter>, Symbol, Vec<Expression>),
+    Serializer(Symbol, Vec<Expression>),
+    ItemFunctionCall(Symbol, Vec<Expression>),
 }
 
 pub type AST = Vec<Statement>;
