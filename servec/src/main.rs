@@ -16,10 +16,11 @@ extern crate syntax;
 extern crate syntex_syntax as syntax;
 
 mod ast;
-mod codegen;
+//mod codegen;
 mod compiler;
 #[macro_use] mod helpers;
 mod parser;
+mod semantic;
 mod source_file;
 mod static_environment;
 

@@ -1,8 +1,9 @@
 use std::error::Error;
 use std::io::{Seek, SeekFrom, Write};
 use super::ast;
-use super::codegen;
+//use super::codegen;
 use super::parser;
+use super::semantic;
 use super::source_file::SourceFile;
 use tempfile;
 
@@ -24,7 +25,9 @@ impl Compiler {
         SourceFile::load(path).map_err(stringify_err)
             .and_then(lex)
             .and_then(parser::parse)
-            .and_then(codegen::codegen)
+            .and_then(semantic::type_check)
+            .map(|st| format!("{:?}", st))
+            //.and_then(codegen::codegen)
     }
 
 }
