@@ -92,7 +92,7 @@ struct Parser {
 
 type ParserResult<T> = Result<T, String>;
 
-pub fn parse(tokens: Vec<Token>) -> ParserResult<AST> {
+pub fn parse(tokens: Vec<Token>) -> ParserResult<(AST, SymbolRegistry, SymbolRegistry)> {
     debug!("Input: {:?}", tokens);
     Parser::new(tokens).parse()
 }
@@ -108,13 +108,13 @@ impl Parser {
         }
     }
 
-    fn parse(&mut self) -> ParserResult<AST> {
+    fn parse(mut self) -> ParserResult<(AST, SymbolRegistry, SymbolRegistry)> {
         debug!("parse()");
         let output = self.many(Parser::parse_statement)?;
         if !self.empty() {
             return Err(format!("Remaining input: {:?}", self.tokens));
         }
-        Ok(output)
+        Ok((output, self.value_symbols, self.type_symbols))
     }
 
     fn parse_statement(&mut self) -> ParserResult<Statement> {
@@ -423,7 +423,7 @@ impl Parser {
 
 fn check_input(input: &str, expected: AST) {
     let lexed = lex(input.as_bytes()).to_result().unwrap();
-    let parsed = parse(lexed).unwrap();
+    let (parsed, _, _) = parse(lexed).unwrap();
     assert_eq!(parsed, expected);
 }
 

@@ -45,13 +45,17 @@ pub type SemanticAnalysisResult = Result<ServeType, String>;
 
 struct SemanticAnalysisContext {
     environment: Environment,
+    value_symbols: SymbolRegistry,
+    type_symbols: SymbolRegistry,
 }
 
 impl SemanticAnalysisContext {
 
-    pub fn new() -> Self {
+    pub fn new(values: SymbolRegistry, types: SymbolRegistry) -> Self {
         Self {
             environment: Environment::new(),
+            value_symbols: values,
+            type_symbols: types,
         }
     }
 
@@ -116,7 +120,11 @@ impl SemanticAnalysisContext {
 
 }
 
-pub fn type_check(ast: AST) -> SemanticAnalysisResult {
-    let mut ctx = SemanticAnalysisContext::new();
+pub fn type_check(
+    ast: AST,
+    values: SymbolRegistry,
+    types: SymbolRegistry,
+) -> SemanticAnalysisResult {
+    let mut ctx = SemanticAnalysisContext::new(values, types);
     ctx.type_check_statements(&ast)
 }
