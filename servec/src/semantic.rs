@@ -57,31 +57,48 @@ impl SemanticAnalysisContext {
         }
     }
 
-    pub fn type_check_statements(&mut self, stmts: &Vec<Statement>) -> SemanticAnalysisResult {
+    pub fn type_check_declarations(&mut self, stmts: &Vec<Declaration>) -> SemanticAnalysisResult {
         let mut result = ServeType::Unit;
         for stmt in stmts {
-            result = self.type_check_statement(stmt)?;
+            result = self.type_check_declaration(stmt)?;
         }
         Ok(result)
     }
 
-    pub fn type_check_statement(&mut self, stmt: &Statement) -> SemanticAnalysisResult {
+    pub fn type_check_declaration(&mut self, stmt: &Declaration) -> SemanticAnalysisResult {
         match *stmt {
-            Statement::Application(ref name, ref body) => {
-                self.type_check_statements(body)
+            Declaration::Application(ref name, ref body) => {
+                self.type_check_application_statements(body)
             },
-            Statement::Endpoint(ref name, ref args, ref returntype, ref body) => {
+            Declaration::Serializer(ref name, ref body) => {
+                self.with_scope(|ctx| {
+                    ctx.type_check_expressions(body)
+                })
+            },
+        }
+    }
+
+    pub fn type_check_application_statements(&mut self, stmts: &Vec<ApplicationStatement>)
+        -> SemanticAnalysisResult
+    {
+        let mut result = ServeType::Unit;
+        for stmt in stmts {
+            result = self.type_check_application_statement(stmt)?;
+        }
+        Ok(result)
+    }
+
+    pub fn type_check_application_statement(&mut self, stmt: &ApplicationStatement)
+        -> SemanticAnalysisResult
+    {
+        match *stmt {
+            ApplicationStatement::Endpoint(ref name, ref args, ref returntype, ref body) => {
                 // TODO: expose endpoint in the result?
                 self.with_scope(|ctx| {
                     ctx.type_check_expressions(body)
                 })
             },
-            Statement::Serializer(ref name, ref body) => {
-                self.with_scope(|ctx| {
-                    ctx.type_check_expressions(body)
-                })
-            },
-            Statement::ItemFunctionCall(ref name, ref args) => {
+            ApplicationStatement::ItemFunctionCall(ref name, ref args) => {
                 // TODO: lookup name in environment and check args against function
                 self.type_check_expressions(args)
             }
@@ -122,5 +139,5 @@ pub fn type_check(
     symbols: SymbolRegistry,
 ) -> SemanticAnalysisResult {
     let mut ctx = SemanticAnalysisContext::new(symbols);
-    ctx.type_check_statements(&ast)
+    ctx.type_check_declarations(&ast)
 }

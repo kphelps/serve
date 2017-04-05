@@ -26,11 +26,15 @@ impl FunctionParameter {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Statement {
-    Application(Symbol, Vec<Statement>),
+pub enum ApplicationStatement {
     Endpoint(Symbol, Vec<FunctionParameter>, Symbol, Vec<Expression>),
-    Serializer(Symbol, Vec<Expression>),
     ItemFunctionCall(Symbol, Vec<Expression>),
 }
 
-pub type AST = Vec<Statement>;
+#[derive(Debug, Eq, PartialEq)]
+pub enum Declaration {
+    Application(Symbol, Vec<ApplicationStatement>),
+    Serializer(Symbol, Vec<Expression>),
+}
+
+pub type AST = Vec<Declaration>;

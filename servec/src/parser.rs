@@ -3,7 +3,7 @@ use nom::{alphanumeric, IResult, is_digit};
 use std::str;
 use std::str::FromStr;
 use std::string::String;
-use super::ast::{AST, Expression, FunctionParameter, Statement};
+use super::ast::*;
 use super::helpers;
 use super::symbol::{Symbol, SymbolRegistry};
 
@@ -108,39 +108,38 @@ impl Parser {
 
     fn parse(mut self) -> ParserResult<(AST, SymbolRegistry)> {
         debug!("parse()");
-        let output = self.many(Parser::parse_statement)?;
+        let output = self.many(Parser::parse_declaration)?;
         if !self.empty() {
             return Err(format!("Remaining input: {:?}", self.tokens));
         }
         Ok((output, self.symbols))
     }
 
-    fn parse_statement(&mut self) -> ParserResult<Statement> {
-        debug!("parse_statement()");
+    fn parse_declaration(&mut self) -> ParserResult<Declaration> {
+        debug!("parse_declaration()");
         parse_first!(self()
             Parser::parse_application,
             Parser::parse_serializer
         )
     }
 
-    fn parse_application(&mut self) -> ParserResult<Statement> {
+    fn parse_application(&mut self) -> ParserResult<Declaration> {
         debug!("parse_application()");
         self.skip(&Token::Application());
         let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_application_context)?;
-        Ok(Statement::Application(name, body))
+        Ok(Declaration::Application(name, body))
     }
 
-    fn parse_application_context(&mut self) -> ParserResult<Statement> {
+    fn parse_application_context(&mut self) -> ParserResult<ApplicationStatement> {
         debug!("parse_application_context()");
         parse_first!(self()
             Parser::parse_endpoint,
-            Parser::parse_serializer,
             Parser::parse_item_function_call
         )
     }
 
-    fn parse_endpoint(&mut self) -> ParserResult<Statement> {
+    fn parse_endpoint(&mut self) -> ParserResult<ApplicationStatement> {
         debug!("parse_endpoint()");
         self.skip(&Token::Endpoint())?;
         let name = self.parse_identifier()?;
@@ -148,21 +147,21 @@ impl Parser {
         self.skip(&Token::RightArrow())?;
         let return_type = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_expression)?;
-        Ok(Statement::Endpoint(name, args, return_type, body))
+        Ok(ApplicationStatement::Endpoint(name, args, return_type, body))
     }
 
-    fn parse_serializer(&mut self) -> ParserResult<Statement> {
+    fn parse_serializer(&mut self) -> ParserResult<Declaration> {
         debug!("parse_serializer()");
         self.skip(&Token::Serializer())?;
         let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_expression)?;
-        Ok(Statement::Serializer(name, body))
+        Ok(Declaration::Serializer(name, body))
     }
 
-    fn parse_item_function_call(&mut self) -> ParserResult<Statement> {
+    fn parse_item_function_call(&mut self) -> ParserResult<ApplicationStatement> {
         let name = self.parse_identifier()?;
         let params = self.parse_function_call_arguments()?;
-        Ok(Statement::ItemFunctionCall(name, params))
+        Ok(ApplicationStatement::ItemFunctionCall(name, params))
     }
 
     fn parse_expression(&mut self) -> ParserResult<Expression> {
@@ -420,7 +419,7 @@ fn check_input(input: &str, expected: AST) {
 fn test_simple_application() {
     check_input(
         "application App end",
-        vec![Statement::Application(0, vec![])]
+        vec![Declaration::Application(0, vec![])]
     );
 }
 
@@ -428,10 +427,10 @@ fn test_simple_application() {
 fn test_application_with_simple_endpoint() {
     check_input(
         "application App endpoint index() -> String end end",
-        vec![Statement::Application(
+        vec![Declaration::Application(
             0,
             vec![
-                Statement::Endpoint(
+                ApplicationStatement::Endpoint(
                     1,
                     vec![],
                     2,
@@ -451,10 +450,10 @@ fn test_application_with_single_arg_endpoint() {
             end
         end
         ",
-        vec![Statement::Application(
+        vec![Declaration::Application(
             0,
             vec![
-                Statement::Endpoint(
+                ApplicationStatement::Endpoint(
                     1,
                     vec![FunctionParameter::new(2, 3)],
                     4,
@@ -474,10 +473,10 @@ fn test_application_with_multi_arg_endpoint() {
             end
         end
         ",
-        vec![Statement::Application(
+        vec![Declaration::Application(
             0,
             vec![
-                Statement::Endpoint(
+                ApplicationStatement::Endpoint(
                     1,
                     vec![
                         FunctionParameter::new(2, 3),
@@ -502,10 +501,10 @@ fn test_application_with_endpoint_with_body() {
             end
         end
         ",
-        vec![Statement::Application(
+        vec![Declaration::Application(
             0,
             vec![
-                Statement::Endpoint(
+                ApplicationStatement::Endpoint(
                     1,
                     vec![FunctionParameter::new(2, 3)],
                     4,
@@ -535,10 +534,10 @@ fn test_application_with_endpoint_with_multiline_body() {
             end
         end
         ",
-        vec![Statement::Application(
+        vec![Declaration::Application(
             0,
             vec![
-                Statement::Endpoint(
+                ApplicationStatement::Endpoint(
                     1,
                     vec![FunctionParameter::new(2, 3)],
                     4,
@@ -582,18 +581,18 @@ fn test_application_with_host_port() {
             end
         end
         ",
-        vec![Statement::Application(
+        vec![Declaration::Application(
             0,
             vec![
-                Statement::ItemFunctionCall(
+                ApplicationStatement::ItemFunctionCall(
                     1,
                     vec![Expression::StringLiteral("127.0.0.1".to_string())]
                 ),
-                Statement::ItemFunctionCall(
+                ApplicationStatement::ItemFunctionCall(
                     2,
                     vec![Expression::IntLiteral(8080)],
                 ),
-                Statement::Endpoint(
+                ApplicationStatement::Endpoint(
                     3,
                     vec![FunctionParameter::new(4, 5)],
                     6,
@@ -621,7 +620,7 @@ fn test_serializer_with_method_call() {
         end
         ",
         vec![
-            Statement::Serializer(
+            Declaration::Serializer(
                 0,
                 vec![
                     Expression::MethodCall(
@@ -647,7 +646,7 @@ fn test_serializer_with_chained_method_call() {
         end
         ",
         vec![
-            Statement::Serializer(
+            Declaration::Serializer(
                 0,
                 vec![
                     Expression::MethodCall(
@@ -681,10 +680,10 @@ fn test_endpoint_returns_method_call() {
         end
         ",
         vec![
-            Statement::Application(
+            Declaration::Application(
                 0,
                 vec![
-                    Statement::Endpoint(
+                    ApplicationStatement::Endpoint(
                         1,
                         vec![],
                         2,
