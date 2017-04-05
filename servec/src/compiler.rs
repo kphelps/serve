@@ -25,8 +25,8 @@ impl Compiler {
         SourceFile::load(path).map_err(stringify_err)
             .and_then(lex)
             .and_then(parser::parse)
-            .and_then(|(ast, values, types)| {
-                semantic::type_check(ast, values, types)
+            .and_then(|(ast, symbols)| {
+                semantic::type_check(ast, symbols)
             })
             .map(|st| format!("{:?}", st))
             //.and_then(codegen::codegen)

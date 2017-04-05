@@ -86,13 +86,12 @@ struct Parser {
     tokens: Vec<Token>,
     position: usize,
     checkpoints: Vec<usize>,
-    value_symbols: SymbolRegistry,
-    type_symbols: SymbolRegistry,
+    symbols: SymbolRegistry,
 }
 
 type ParserResult<T> = Result<T, String>;
 
-pub fn parse(tokens: Vec<Token>) -> ParserResult<(AST, SymbolRegistry, SymbolRegistry)> {
+pub fn parse(tokens: Vec<Token>) -> ParserResult<(AST, SymbolRegistry)> {
     debug!("Input: {:?}", tokens);
     Parser::new(tokens).parse()
 }
@@ -103,18 +102,17 @@ impl Parser {
             tokens: tokens,
             position: 0,
             checkpoints: vec![],
-            value_symbols: SymbolRegistry::new(),
-            type_symbols: SymbolRegistry::new(),
+            symbols: SymbolRegistry::new(),
         }
     }
 
-    fn parse(mut self) -> ParserResult<(AST, SymbolRegistry, SymbolRegistry)> {
+    fn parse(mut self) -> ParserResult<(AST, SymbolRegistry)> {
         debug!("parse()");
         let output = self.many(Parser::parse_statement)?;
         if !self.empty() {
             return Err(format!("Remaining input: {:?}", self.tokens));
         }
-        Ok((output, self.value_symbols, self.type_symbols))
+        Ok((output, self.symbols))
     }
 
     fn parse_statement(&mut self) -> ParserResult<Statement> {
@@ -128,7 +126,7 @@ impl Parser {
     fn parse_application(&mut self) -> ParserResult<Statement> {
         debug!("parse_application()");
         self.skip(&Token::Application());
-        let name = self.parse_type_identifier()?;
+        let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_application_context)?;
         Ok(Statement::Application(name, body))
     }
@@ -148,7 +146,7 @@ impl Parser {
         let name = self.parse_identifier()?;
         let args = self.parse_function_parameters()?;
         self.skip(&Token::RightArrow())?;
-        let return_type = self.parse_type_identifier()?;
+        let return_type = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_expression)?;
         Ok(Statement::Endpoint(name, args, return_type, body))
     }
@@ -156,7 +154,7 @@ impl Parser {
     fn parse_serializer(&mut self) -> ParserResult<Statement> {
         debug!("parse_serializer()");
         self.skip(&Token::Serializer())?;
-        let name = self.parse_type_identifier()?;
+        let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_expression)?;
         Ok(Statement::Serializer(name, body))
     }
@@ -258,26 +256,17 @@ impl Parser {
         debug!("parse_function_parameter()");
         let name = self.parse_identifier()?;
         self.skip(&Token::Colon())?;
-        let type_name = self.parse_type_identifier()?;
+        let type_name = self.parse_identifier()?;
         Ok(FunctionParameter::new(name, type_name))
     }
 
     fn parse_identifier(&mut self) -> ParserResult<Symbol> {
         debug!("parse_identifier()");
         match self.consume()? {
-            Token::Identifier(name) => Ok(self.value_symbols.get_symbol(name)),
+            Token::Identifier(name) => Ok(self.symbols.get_symbol(name)),
             token => self.error(token),
         }
     }
-
-    fn parse_type_identifier(&mut self) -> ParserResult<Symbol> {
-        debug!("parse_type_identifier()");
-        match self.consume()? {
-            Token::Identifier(name) => Ok(self.type_symbols.get_symbol(name)),
-            token => self.error(token),
-        }
-    }
-
     fn parse_identifier_expression(&mut self) -> ParserResult<Expression> {
         debug!("parse_identifier_expression()");
         self.parse_identifier().map(Expression::Identifier)
@@ -423,7 +412,7 @@ impl Parser {
 
 fn check_input(input: &str, expected: AST) {
     let lexed = lex(input.as_bytes()).to_result().unwrap();
-    let (parsed, _, _) = parse(lexed).unwrap();
+    let (parsed, _) = parse(lexed).unwrap();
     assert_eq!(parsed, expected);
 }
 
@@ -443,9 +432,9 @@ fn test_application_with_simple_endpoint() {
             0,
             vec![
                 Statement::Endpoint(
-                    0,
-                    vec![],
                     1,
+                    vec![],
+                    2,
                     vec![],
                 ),
             ]
@@ -466,9 +455,9 @@ fn test_application_with_single_arg_endpoint() {
             0,
             vec![
                 Statement::Endpoint(
-                    0,
-                    vec![FunctionParameter::new(1, 1)],
-                    2,
+                    1,
+                    vec![FunctionParameter::new(2, 3)],
+                    4,
                     vec![],
                 ),
             ]
@@ -489,12 +478,12 @@ fn test_application_with_multi_arg_endpoint() {
             0,
             vec![
                 Statement::Endpoint(
-                    0,
+                    1,
                     vec![
-                        FunctionParameter::new(1, 1),
-                        FunctionParameter::new(2, 2),
+                        FunctionParameter::new(2, 3),
+                        FunctionParameter::new(4, 5),
                     ],
-                    3,
+                    6,
                     vec![],
                 ),
             ]
@@ -517,14 +506,14 @@ fn test_application_with_endpoint_with_body() {
             0,
             vec![
                 Statement::Endpoint(
-                    0,
-                    vec![FunctionParameter::new(1, 1)],
-                    2,
+                    1,
+                    vec![FunctionParameter::new(2, 3)],
+                    4,
                     vec![
                         Expression::Return(
                             Box::new(Expression::FunctionCall(
-                                0,
-                                vec![Expression::Identifier(1)]
+                                1,
+                                vec![Expression::Identifier(2)]
                             ))
                         )
                     ],
@@ -550,26 +539,26 @@ fn test_application_with_endpoint_with_multiline_body() {
             0,
             vec![
                 Statement::Endpoint(
-                    0,
-                    vec![FunctionParameter::new(1, 1)],
-                    2,
+                    1,
+                    vec![FunctionParameter::new(2, 3)],
+                    4,
                     vec![
-                        Expression::Identifier(2),
+                        Expression::Identifier(5),
                         Expression::FunctionCall(
-                            3,
+                            6,
                             vec![
-                                Expression::Identifier(4),
+                                Expression::Identifier(7),
                                 Expression::IntLiteral(123),
                                 Expression::StringLiteral("string".to_string()),
                                 Expression::FunctionCall(
-                                    5,
-                                    vec![Expression::Identifier(6)]
+                                    8,
+                                    vec![Expression::Identifier(9)]
                                 )
                             ]
                         ),
                         Expression::Return(
                             Box::new(Expression::FunctionCall(
-                                7,
+                                10,
                                 vec![]
                             ))
                         )
@@ -597,21 +586,21 @@ fn test_application_with_host_port() {
             0,
             vec![
                 Statement::ItemFunctionCall(
-                    0,
+                    1,
                     vec![Expression::StringLiteral("127.0.0.1".to_string())]
                 ),
                 Statement::ItemFunctionCall(
-                    1,
+                    2,
                     vec![Expression::IntLiteral(8080)],
                 ),
                 Statement::Endpoint(
-                    2,
-                    vec![FunctionParameter::new(3, 1)],
-                    2,
+                    3,
+                    vec![FunctionParameter::new(4, 5)],
+                    6,
                     vec![
                         Expression::Return(
                             Box::new(Expression::FunctionCall(
-                                4,
+                                7,
                                 vec![]
                             ))
                         )
@@ -636,11 +625,11 @@ fn test_serializer_with_method_call() {
                 0,
                 vec![
                     Expression::MethodCall(
-                        Box::new(Expression::Identifier(0)),
-                        1,
+                        Box::new(Expression::Identifier(1)),
+                        2,
                         vec![
-                            Expression::Identifier(2),
                             Expression::Identifier(3),
+                            Expression::Identifier(4),
                         ]
                     )
                 ]
@@ -664,15 +653,15 @@ fn test_serializer_with_chained_method_call() {
                     Expression::MethodCall(
                         Box::new(
                             Expression::MethodCall(
-                                Box::new(Expression::Identifier(0)),
-                                1,
+                                Box::new(Expression::Identifier(1,)),
+                                2,
                                 vec![]
                             )
                         ),
-                        2,
+                        3,
                         vec![
-                            Expression::Identifier(3),
                             Expression::Identifier(4),
+                            Expression::Identifier(5),
                         ]
                     )
                 ]
@@ -696,15 +685,15 @@ fn test_endpoint_returns_method_call() {
                 0,
                 vec![
                     Statement::Endpoint(
-                        0,
-                        vec![],
                         1,
+                        vec![],
+                        2,
                         vec![
                             Expression::Return(
                                 Box::new(
                                     Expression::MethodCall(
                                         Box::new(Expression::StringLiteral("Hello World!".to_string())),
-                                        1,
+                                        3,
                                         vec![],
                                     )
                                 )

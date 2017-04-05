@@ -45,17 +45,15 @@ pub type SemanticAnalysisResult = Result<ServeType, String>;
 
 struct SemanticAnalysisContext {
     environment: Environment,
-    value_symbols: SymbolRegistry,
-    type_symbols: SymbolRegistry,
+    symbols: SymbolRegistry,
 }
 
 impl SemanticAnalysisContext {
 
-    pub fn new(values: SymbolRegistry, types: SymbolRegistry) -> Self {
+    pub fn new(symbols: SymbolRegistry) -> Self {
         Self {
             environment: Environment::new(),
-            value_symbols: values,
-            type_symbols: types,
+            symbols: symbols,
         }
     }
 
@@ -75,7 +73,6 @@ impl SemanticAnalysisContext {
             Statement::Endpoint(ref name, ref args, ref returntype, ref body) => {
                 // TODO: expose endpoint in the result?
                 self.with_scope(|ctx| {
-
                     ctx.type_check_expressions(body)
                 })
             },
@@ -122,9 +119,8 @@ impl SemanticAnalysisContext {
 
 pub fn type_check(
     ast: AST,
-    values: SymbolRegistry,
-    types: SymbolRegistry,
+    symbols: SymbolRegistry,
 ) -> SemanticAnalysisResult {
-    let mut ctx = SemanticAnalysisContext::new(values, types);
+    let mut ctx = SemanticAnalysisContext::new(symbols);
     ctx.type_check_statements(&ast)
 }
