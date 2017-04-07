@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 pub type Symbol = usize;
 
+#[derive(Debug)]
 pub struct SymbolRegistry {
     symbolsToName: HashMap<Symbol, String>,
     namesToSymbol: HashMap<String, Symbol>,
@@ -30,6 +31,7 @@ impl SymbolRegistry {
     }
 }
 
+#[derive(Debug)]
 pub struct SymbolBindingTable<T> {
     values: Vec<HashMap<Symbol, T>>
 }

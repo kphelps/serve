@@ -23,6 +23,14 @@ impl FunctionParameter {
             tipe: tipe,
         }
     }
+
+    pub fn get_name(&self) -> Symbol {
+        self.name
+    }
+
+    pub fn get_type(&self) -> Symbol {
+        self.tipe
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
