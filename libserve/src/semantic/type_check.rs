@@ -6,36 +6,36 @@ use super::type_registrar::TypeRegistrar;
 
 
 pub trait TypeChecker {
-    fn type_check_declarations(&mut self, decls: &Vec<Declaration>)
+    fn type_check_top_level_declarations(&mut self, decls: &Vec<TopLevelDeclaration>)
         -> SemanticResult;
 }
 
 impl TypeChecker for SemanticContext {
 
-    fn type_check_declarations(&mut self, decls: &Vec<Declaration>) -> SemanticResult {
+    fn type_check_top_level_declarations(&mut self, decls: &Vec<TopLevelDeclaration>) -> SemanticResult {
         let mut result = ServeType::Unit;
         for decl in decls {
-            result = self.type_check_declaration(decl)?;
+            result = self.type_check_top_level_declaration(decl)?;
         }
         Ok(result)
     }
 }
 
 impl SemanticContext {
-    fn type_check_declaration(&mut self, decl: &Declaration) -> SemanticResult {
+    fn type_check_top_level_declaration(&mut self, decl: &TopLevelDeclaration) -> SemanticResult {
         match *decl {
-            Declaration::Application(ref name, ref body) => {
+            TopLevelDeclaration::Application(ref name, ref body) => {
                 self.with_scope(TypeContext::Application, |ctx| {
                     ctx.type_check_application_statements(body)
                 })
             },
-            Declaration::Serializer(ref name, ref body) => {
+            TopLevelDeclaration::Serializer(ref name, ref body) => {
                 self.with_scope(TypeContext::Serializer, |ctx| {
-                    ctx.type_check_expressions(body)
+                    ctx.type_check_statements(body)
                 })
             },
-            Declaration::Statement(ref stmt) => {
-                self.type_check_statement(stmt)
+            TopLevelDeclaration::Declaration(ref stmt) => {
+                self.type_check_declaration(stmt)
             },
         }
     }
@@ -68,17 +68,17 @@ impl SemanticContext {
             ApplicationStatement::ItemFunctionCall(ref name, ref args) => {
                 self.type_check_function_call(name, args)
             }
-            ApplicationStatement::Statement(ref stmt) => {
-                self.type_check_statement(stmt)
+            ApplicationStatement::Declaration(ref stmt) => {
+                self.type_check_declaration(stmt)
             }
         }
     }
 
-    fn type_check_statement(&mut self, stmt: &Statement)
+    fn type_check_declaration(&mut self, stmt: &Declaration)
         -> SemanticResult
     {
         match *stmt {
-            Statement::Function(ref name, ref args, ref return_type_name, ref body) => {
+            Declaration::Function(ref name, ref args, ref return_type_name, ref body) => {
                 self.type_check_function_like_decl(
                     TypeContext::Function,
                     name,
@@ -87,6 +87,29 @@ impl SemanticContext {
                     body
                 )
             }
+        }
+    }
+
+    fn type_check_statements(&mut self, stmts: &Vec<Statement>)
+        -> SemanticResult
+    {
+        let mut result = ServeType::Unit;
+        for stmt in stmts {
+            result = self.type_check_statement(stmt)?;
+        }
+        Ok(result)
+    }
+
+    fn type_check_statement(&mut self, stmt: &Statement) -> SemanticResult {
+        match *stmt {
+            Statement::Let(ref name, ref body) => {
+                let body_type = self.type_check_expression(body)?;
+                self.register_value(*name, ValueEntry::Variable(body_type));
+                Ok(ServeType::Unit)
+            },
+            Statement::Expression(ref inner) => {
+                self.type_check_expression(inner)
+            },
         }
     }
 
@@ -178,7 +201,7 @@ impl SemanticContext {
         name: &Symbol,
         args: &Vec<FunctionParameter>,
         return_type_name: &Symbol,
-        body: &Vec<Expression>
+        body: &Vec<Statement>
     ) -> SemanticResult
     {
         let actual_return = self.with_scope(scope, |ctx| {
@@ -189,7 +212,7 @@ impl SemanticContext {
                     ValueEntry::Variable(arg_type)
                 );
             }
-            ctx.type_check_expressions(body)
+            ctx.type_check_statements(body)
         })?;
         let return_type = self.get_type(*return_type_name);
         self.check_types(&return_type, actual_return)?;

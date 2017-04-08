@@ -17,6 +17,6 @@ pub fn type_check(
     symbols: SymbolRegistry,
 ) -> SemanticResult {
     let mut ctx = SemanticContext::new(symbols);
-    ctx.scan_declarations(&ast);
-    ctx.type_check_declarations(&ast)
+    ctx.scan_top_level_declarations(&ast);
+    ctx.type_check_top_level_declarations(&ast)
 }

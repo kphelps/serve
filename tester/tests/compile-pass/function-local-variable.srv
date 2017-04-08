@@ -1,0 +1,5 @@
+
+fn variable() -> String
+    let x = "Hello World"
+    x
+end

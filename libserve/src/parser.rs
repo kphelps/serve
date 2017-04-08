@@ -13,6 +13,7 @@ pub enum Token {
     Serializer(),
     Function(),
     Return(),
+    Let(),
     End(),
     RightArrow(),
     OpenParen(),
@@ -22,6 +23,7 @@ pub enum Token {
     Colon(),
     OpenSquareBracket(),
     CloseSquareBracket(),
+    Equal(),
     StringLiteral(String),
     IntLiteral(i64),
     Identifier(String),
@@ -33,6 +35,7 @@ named!(pub lex<Vec<Token>>,
         kw0!("endpoint", Endpoint) |
         kw0!("serializer", Serializer) |
         kw0!("return", Return) |
+        kw0!("let", Let) |
         kw0!("end", End) |
         kw0!("fn", Function) |
         kw0!("->", RightArrow) |
@@ -43,6 +46,7 @@ named!(pub lex<Vec<Token>>,
         kw0!(":", Colon) |
         kw0!("[", OpenSquareBracket) |
         kw0!("]", CloseSquareBracket) |
+        kw0!("=", Equal) |
         kw1!(string_literal, StringLiteral) |
         kw1!(int_literal, IntLiteral) |
         kw1!(identifier, Identifier)
@@ -109,28 +113,28 @@ impl Parser {
 
     fn parse(mut self) -> ParserResult<(AST, SymbolRegistry)> {
         debug!("parse()");
-        let output = self.many(Parser::parse_declaration)?;
+        let output = self.many(Parser::parse_top_level_declaration)?;
         if !self.empty() {
             return Err(format!("Remaining input: {:?}", self.tokens));
         }
         Ok((output, self.symbols))
     }
 
-    fn parse_declaration(&mut self) -> ParserResult<Declaration> {
-        debug!("parse_declaration()");
+    fn parse_top_level_declaration(&mut self) -> ParserResult<TopLevelDeclaration> {
+        debug!("parse_top_level_declaration()");
         parse_first!(self()
             Parser::parse_application,
             Parser::parse_serializer,
-            Parser::parse_statement_as_declaration
+            Parser::parse_declaration_as_top_level_declaration
         )
     }
 
-    fn parse_application(&mut self) -> ParserResult<Declaration> {
+    fn parse_application(&mut self) -> ParserResult<TopLevelDeclaration> {
         debug!("parse_application()");
         self.skip(&Token::Application());
         let name = self.parse_identifier()?;
         let body = self.until_end(Parser::parse_application_context)?;
-        Ok(Declaration::Application(name, body))
+        Ok(TopLevelDeclaration::Application(name, body))
     }
 
     fn parse_application_context(&mut self) -> ParserResult<ApplicationStatement> {
@@ -138,7 +142,7 @@ impl Parser {
         parse_first!(self()
             Parser::parse_endpoint,
             Parser::parse_item_function_call,
-            Parser::parse_statement_as_application_statement
+            Parser::parse_declaration_as_application_statement
         )
     }
 
@@ -147,12 +151,12 @@ impl Parser {
         self.parse_function_like(&Token::Endpoint(), ApplicationStatement::Endpoint)
     }
 
-    fn parse_serializer(&mut self) -> ParserResult<Declaration> {
+    fn parse_serializer(&mut self) -> ParserResult<TopLevelDeclaration> {
         debug!("parse_serializer()");
         self.skip(&Token::Serializer())?;
         let name = self.parse_identifier()?;
-        let body = self.until_end(Parser::parse_expression)?;
-        Ok(Declaration::Serializer(name, body))
+        let body = self.until_end(Parser::parse_statement)?;
+        Ok(TopLevelDeclaration::Serializer(name, body))
     }
 
     fn parse_item_function_call(&mut self) -> ParserResult<ApplicationStatement> {
@@ -161,28 +165,47 @@ impl Parser {
         Ok(ApplicationStatement::ItemFunctionCall(name, params))
     }
 
-    fn parse_statement_as_declaration(&mut self)
-        -> ParserResult<Declaration>
+    fn parse_declaration_as_top_level_declaration(&mut self)
+        -> ParserResult<TopLevelDeclaration>
     {
-        self.parse_statement()
-            .map(Declaration::Statement)
+        self.parse_declaration()
+            .map(TopLevelDeclaration::Declaration)
     }
 
-    fn parse_statement_as_application_statement(&mut self)
+    fn parse_declaration_as_application_statement(&mut self)
         -> ParserResult<ApplicationStatement>
     {
-        self.parse_statement()
-            .map(ApplicationStatement::Statement)
+        self.parse_declaration()
+            .map(ApplicationStatement::Declaration)
     }
 
-    fn parse_statement(&mut self) -> ParserResult<Statement> {
+    fn parse_declaration(&mut self) -> ParserResult<Declaration> {
         parse_first!(self()
             Parser::parse_function_declaration
         )
     }
 
-    fn parse_function_declaration(&mut self) -> ParserResult<Statement> {
-        self.parse_function_like(&Token::Function(), Statement::Function)
+    fn parse_function_declaration(&mut self) -> ParserResult<Declaration> {
+        self.parse_function_like(&Token::Function(), Declaration::Function)
+    }
+
+    fn parse_statement(&mut self) -> ParserResult<Statement> {
+        parse_first!(self()
+            Parser::parse_let,
+            Parser::parse_expression_as_statement
+        )
+    }
+
+    fn parse_let(&mut self) -> ParserResult<Statement> {
+        self.skip(&Token::Let())?;
+        let name = self.parse_identifier()?;
+        self.skip(&Token::Equal())?;
+        let expr = self.parse_expression()?;
+        Ok(Statement::Let(name, expr))
+    }
+
+    fn parse_expression_as_statement(&mut self) -> ParserResult<Statement> {
+        self.parse_expression().map(Statement::Expression)
     }
 
     fn parse_expression(&mut self) -> ParserResult<Expression> {
@@ -294,14 +317,14 @@ impl Parser {
 
     fn parse_function_like<F, T>(&mut self, marker: &Token, ctor: F)
         -> ParserResult<T>
-            where F: Fn(Symbol, Vec<FunctionParameter>, Symbol, Vec<Expression>) -> T
+            where F: Fn(Symbol, Vec<FunctionParameter>, Symbol, Vec<Statement>) -> T
     {
         self.skip(marker);
         let name = self.parse_identifier()?;
         let args = self.parse_function_parameters()?;
         self.skip(&Token::RightArrow())?;
         let return_type = self.parse_identifier()?;
-        let body = self.until_end(Parser::parse_expression)?;
+        let body = self.until_end(Parser::parse_statement)?;
         Ok(ctor(name, args, return_type, body))
     }
 
@@ -453,7 +476,7 @@ fn check_input(input: &str, expected: AST) {
 fn test_simple_application() {
     check_input(
         "application App end",
-        vec![Declaration::Application(0, vec![])]
+        vec![TopLevelDeclaration::Application(0, vec![])]
     );
 }
 
@@ -461,7 +484,7 @@ fn test_simple_application() {
 fn test_application_with_simple_endpoint() {
     check_input(
         "application App endpoint index() -> String end end",
-        vec![Declaration::Application(
+        vec![TopLevelDeclaration::Application(
             0,
             vec![
                 ApplicationStatement::Endpoint(
@@ -484,7 +507,7 @@ fn test_application_with_single_arg_endpoint() {
             end
         end
         ",
-        vec![Declaration::Application(
+        vec![TopLevelDeclaration::Application(
             0,
             vec![
                 ApplicationStatement::Endpoint(
@@ -507,7 +530,7 @@ fn test_application_with_multi_arg_endpoint() {
             end
         end
         ",
-        vec![Declaration::Application(
+        vec![TopLevelDeclaration::Application(
             0,
             vec![
                 ApplicationStatement::Endpoint(
@@ -535,7 +558,7 @@ fn test_application_with_endpoint_with_body() {
             end
         end
         ",
-        vec![Declaration::Application(
+        vec![TopLevelDeclaration::Application(
             0,
             vec![
                 ApplicationStatement::Endpoint(
@@ -568,7 +591,7 @@ fn test_application_with_endpoint_with_multiline_body() {
             end
         end
         ",
-        vec![Declaration::Application(
+        vec![TopLevelDeclaration::Application(
             0,
             vec![
                 ApplicationStatement::Endpoint(
@@ -615,7 +638,7 @@ fn test_application_with_host_port() {
             end
         end
         ",
-        vec![Declaration::Application(
+        vec![TopLevelDeclaration::Application(
             0,
             vec![
                 ApplicationStatement::ItemFunctionCall(
@@ -653,7 +676,7 @@ fn test_serializer_with_method_call() {
         end
         ",
         vec![
-            Declaration::Serializer(
+            TopLevelDeclaration::Serializer(
                 0,
                 vec![
                     Expression::MethodCall(
@@ -679,7 +702,7 @@ fn test_serializer_with_chained_method_call() {
         end
         ",
         vec![
-            Declaration::Serializer(
+            TopLevelDeclaration::Serializer(
                 0,
                 vec![
                     Expression::MethodCall(
@@ -713,7 +736,7 @@ fn test_endpoint_returns_method_call() {
         end
         ",
         vec![
-            Declaration::Application(
+            TopLevelDeclaration::Application(
                 0,
                 vec![
                     ApplicationStatement::Endpoint(

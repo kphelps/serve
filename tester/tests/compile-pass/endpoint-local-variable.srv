@@ -1,0 +1,11 @@
+
+application App
+
+    define_action(x, GET, "/")
+
+    endpoint x() -> String
+        let r = "Hello"
+        return r
+    end
+
+end

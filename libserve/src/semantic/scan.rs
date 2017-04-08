@@ -5,14 +5,14 @@ use super::type_registrar::TypeRegistrar;
 use super::types::{ServeType, ValueEntry};
 
 pub trait AstScanner {
-    fn scan_declarations(&mut self, decls: &Vec<Declaration>);
+    fn scan_top_level_declarations(&mut self, decls: &Vec<TopLevelDeclaration>);
 }
 
 impl AstScanner for SemanticContext {
 
-    fn scan_declarations(&mut self, decls: &Vec<Declaration>) {
+    fn scan_top_level_declarations(&mut self, decls: &Vec<TopLevelDeclaration>) {
         for decl in decls {
-            self.scan_declaration(decl);
+            self.scan_top_level_declaration(decl);
         }
     }
 
@@ -20,21 +20,21 @@ impl AstScanner for SemanticContext {
 
 impl SemanticContext {
 
-    fn scan_declaration(&mut self, decl: &Declaration) {
+    fn scan_top_level_declaration(&mut self, decl: &TopLevelDeclaration) {
         match *decl {
-            Declaration::Application(ref name, ref body) => {
+            TopLevelDeclaration::Application(ref name, ref body) => {
                 self.scan_application_statements(body)
             },
-            Declaration::Statement(ref inner) => {
-                self.scan_statement(inner)
+            TopLevelDeclaration::Declaration(ref inner) => {
+                self.scan_declaration(inner)
             }
             _ => (),
         }
     }
 
-    fn scan_statement(&mut self, stmt: &Statement) {
+    fn scan_declaration(&mut self, stmt: &Declaration) {
         match *stmt {
-            Statement::Function(ref name, ref args, ref return_type_name, _) => {
+            Declaration::Function(ref name, ref args, ref return_type_name, _) => {
                 self.register_function_decl(name, args, return_type_name, ValueEntry::Function);
             }
         }
@@ -51,8 +51,8 @@ impl SemanticContext {
             ApplicationStatement::Endpoint(ref name, ref args, ref return_type_name, _) => {
                 self.register_function_decl(name, args, return_type_name, ValueEntry::Endpoint);
             },
-            ApplicationStatement::Statement(ref inner) => {
-                self.scan_statement(inner)
+            ApplicationStatement::Declaration(ref inner) => {
+                self.scan_declaration(inner)
             }
             _ => (),
         }

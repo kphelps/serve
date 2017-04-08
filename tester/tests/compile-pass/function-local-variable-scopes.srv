@@ -1,0 +1,10 @@
+
+fn func1() -> String
+    let x = "Hello"
+    x
+end
+
+fn func2() -> Int
+    let x = 123
+    x
+end
