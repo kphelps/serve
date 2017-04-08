@@ -1,0 +1,12 @@
+
+
+fn badconditional() -> String
+
+    if "Hello"
+        1
+    else
+        "World"
+    end
+
+    "Hello"
+end

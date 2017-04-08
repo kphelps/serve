@@ -12,16 +12,22 @@ use nom::{
 
 use std::ops::{Range, RangeTo, RangeFrom};
 
+named!(pub space, eat_separator!(&b" \t"[..]));
+
+#[macro_export]
+macro_rules! sp (
+    ($i:expr, $($args:tt)*) => (
+        {
+            use $crate::helpers::space;
+            sep!($i, space, $($args)*)
+        }
+    )
+);
+
 #[macro_export]
 macro_rules! punct {
     ($i:expr, $punct:expr) => {
-        ws!($i, tag!($punct))
-    };
-}
-
-macro_rules! keyword {
-    ($i:expr, $word:expr) => {
-        punct!($i, $word)
+        sp!($i, tag!($punct))
     };
 }
 

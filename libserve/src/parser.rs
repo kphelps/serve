@@ -14,6 +14,9 @@ pub enum Token {
     Function(),
     Return(),
     Let(),
+    If(),
+    Else(),
+    Elif(),
     End(),
     RightArrow(),
     OpenParen(),
@@ -21,9 +24,11 @@ pub enum Token {
     Comma(),
     Period(),
     Colon(),
+    Semicolon(),
     OpenSquareBracket(),
     CloseSquareBracket(),
     Equal(),
+    Newline(),
     StringLiteral(String),
     IntLiteral(i64),
     Identifier(String),
@@ -36,6 +41,9 @@ named!(pub lex<Vec<Token>>,
         kw0!("serializer", Serializer) |
         kw0!("return", Return) |
         kw0!("let", Let) |
+        kw0!("if", If) |
+        kw0!("else", Else) |
+        kw0!("elif", Elif) |
         kw0!("end", End) |
         kw0!("fn", Function) |
         kw0!("->", RightArrow) |
@@ -44,9 +52,11 @@ named!(pub lex<Vec<Token>>,
         kw0!(",", Comma) |
         kw0!(".", Period) |
         kw0!(":", Colon) |
+        kw0!(";", Semicolon) |
         kw0!("[", OpenSquareBracket) |
         kw0!("]", CloseSquareBracket) |
         kw0!("=", Equal) |
+        kw0!("\n", Newline) |
         kw1!(string_literal, StringLiteral) |
         kw1!(int_literal, IntLiteral) |
         kw1!(identifier, Identifier)
@@ -70,7 +80,7 @@ named!(string_literal<String>,
 named!(int_literal<i64>,
     map_res!(
         map_res!(
-            ws!(take_while!(is_digit)),
+            sp!(take_while!(is_digit)),
             str::from_utf8
         ),
         FromStr::from_str
@@ -80,7 +90,7 @@ named!(int_literal<i64>,
 named!(identifier<String>,
     map_res!(
         map_res!(
-            ws!(helpers::identifier),
+            sp!(helpers::identifier),
             str::from_utf8
         ),
         FromStr::from_str
@@ -122,6 +132,7 @@ impl Parser {
 
     fn parse_top_level_declaration(&mut self) -> ParserResult<TopLevelDeclaration> {
         debug!("parse_top_level_declaration()");
+        self.ignore_newlines();
         parse_first!(self()
             Parser::parse_application,
             Parser::parse_serializer,
@@ -133,12 +144,14 @@ impl Parser {
         debug!("parse_application()");
         self.skip(&Token::Application());
         let name = self.parse_identifier()?;
+        self.ignore_newlines();
         let body = self.until_end(Parser::parse_application_context)?;
         Ok(TopLevelDeclaration::Application(name, body))
     }
 
     fn parse_application_context(&mut self) -> ParserResult<ApplicationStatement> {
         debug!("parse_application_context()");
+        self.ignore_newlines();
         parse_first!(self()
             Parser::parse_endpoint,
             Parser::parse_item_function_call,
@@ -155,6 +168,7 @@ impl Parser {
         debug!("parse_serializer()");
         self.skip(&Token::Serializer())?;
         let name = self.parse_identifier()?;
+        self.ignore_newlines();
         let body = self.until_end(Parser::parse_statement)?;
         Ok(TopLevelDeclaration::Serializer(name, body))
     }
@@ -190,16 +204,20 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> ParserResult<Statement> {
-        parse_first!(self()
+        self.ignore_newlines();
+        let result = parse_first!(self()
             Parser::parse_let,
             Parser::parse_expression_as_statement
-        )
+        );
+        self.skip_statement_separator()?;
+        result
     }
 
     fn parse_let(&mut self) -> ParserResult<Statement> {
         self.skip(&Token::Let())?;
         let name = self.parse_identifier()?;
         self.skip(&Token::Equal())?;
+        self.ignore_newlines();
         let expr = self.parse_expression()?;
         Ok(Statement::Let(name, expr))
     }
@@ -213,6 +231,7 @@ impl Parser {
         let mut e = parse_first!(self()
             Parser::parse_return,
             Parser::parse_function_call,
+            //Parser::parse_conditional,
             Parser::parse_identifier_expression,
             Parser::parse_int_literal,
             Parser::parse_string_literal
@@ -238,6 +257,17 @@ impl Parser {
             Parser::parse_method_call
         )
     }
+
+    fn skip_statement_separator(&mut self) -> ParserResult<()> {
+        let separators = vec![Token::Newline(), Token::Semicolon()];
+        self.skip_one_of(&separators)
+    }
+
+    //fn parse_conditional(&mut self) -> ParserResult<Expression> {
+        //self.skip(&Token::If())?;
+        //let predicate = self.parse_expression()?;
+
+    //}
 
     fn parse_int_literal(&mut self) -> ParserResult<Expression> {
         match self.consume()? {
@@ -274,7 +304,7 @@ impl Parser {
 
     fn parse_function_call_arguments(&mut self) -> ParserResult<Vec<Expression>> {
         self.skip(&Token::OpenParen())?;
-        self.separated_with_until(
+        self.separated_with_until_ignore_newlines(
             Parser::parse_expression,
             Token::Comma(),
             Token::CloseParen(),
@@ -286,11 +316,12 @@ impl Parser {
     {
         debug!("parse_function_parameters()");
         self.skip(&Token::OpenParen())?;
-        self.separated_with_until(
+        self.separated_with_until_ignore_newlines(
             Parser::parse_function_parameter,
             Token::Comma(),
             Token::CloseParen(),
         )
+
     }
 
     fn parse_function_parameter(&mut self)
@@ -322,8 +353,11 @@ impl Parser {
         self.skip(marker);
         let name = self.parse_identifier()?;
         let args = self.parse_function_parameters()?;
+        self.ignore_newlines();
         self.skip(&Token::RightArrow())?;
+        self.ignore_newlines();
         let return_type = self.parse_identifier()?;
+        self.ignore_newlines();
         let body = self.until_end(Parser::parse_statement)?;
         Ok(ctor(name, args, return_type, body))
     }
@@ -364,13 +398,32 @@ impl Parser {
 
     fn skip(&mut self, t: &Token) -> ParserResult<()> {
         debug!("skip({:?})", t);
+        self.skip_one_of(&vec![t.clone()])
+    }
+
+    fn skip_one_of(&mut self, tokens: &Vec<Token>) -> ParserResult<()> {
+        debug!("skip_one_of({:?})", tokens);
         let found = self.peek()?.clone();
-        if &found == t {
+        if tokens.contains(&found) {
             self.consume();
             Ok(())
         } else {
-            self.error_expected(found, t.clone())
+            self.error_expected_one_of(found, tokens)
         }
+    }
+
+    fn skip0(&mut self, t: &Token) {
+        debug!("skip_many({:?})", t);
+        loop {
+            let res = self.skip(t);
+            if res.is_err() {
+                return
+            }
+        }
+    }
+
+    fn ignore_newlines(&mut self) {
+        self.skip0(&Token::Newline())
     }
 
     fn many<F, T>(&mut self, f: F) -> ParserResult<Vec<T>>
@@ -398,6 +451,7 @@ impl Parser {
         debug!("many_until()");
         let mut v = vec![];
         loop {
+            self.ignore_newlines();
             if self.peek_for(&t) {
                 self.consume();
                 return Ok(v);
@@ -435,6 +489,38 @@ impl Parser {
         }
     }
 
+    fn separated_with_until_ignore_newlines<F, T>(
+        &mut self,
+        f: F,
+        sep: Token,
+        end: Token
+    ) -> ParserResult<Vec<T>>
+        where F: Fn(&mut Parser) -> ParserResult<T>
+    {
+        debug!("separated_with_until_ignore_newlines({:?}, {:?})", sep, end);
+        let mut v = vec![];
+        loop {
+            self.ignore_newlines();
+            if self.peek_for(&end) {
+                self.consume();
+                return Ok(v);
+            }
+            match f(self) {
+                Ok(value) => {
+                    v.push(value);
+                },
+                Err(e) => return Err(e),
+            };
+            self.ignore_newlines();
+            if self.peek_for(&end) {
+                self.consume();
+                return Ok(v);
+            }
+            self.skip(&sep)?;
+            self.ignore_newlines();
+        }
+    }
+
     fn until_end<F, T>(&mut self, f: F) -> ParserResult<Vec<T>>
         where F: Fn(&mut Parser) -> ParserResult<T>
     {
@@ -447,6 +533,10 @@ impl Parser {
 
     fn error_expected<T>(&self, found: Token, expected: Token) -> ParserResult<T> {
         Err(format!("Expecting {:?}, found {:?}", expected, found))
+    }
+
+    fn error_expected_one_of<T>(&self, found: Token, expected: &Vec<Token>) -> ParserResult<T> {
+        Err(format!("Expecting one of {:?}, found {:?}", expected, found))
     }
 
     fn checkpoint(&mut self) {
@@ -468,6 +558,7 @@ impl Parser {
 
 fn check_input(input: &str, expected: AST) {
     let lexed = lex(input.as_bytes()).to_result().unwrap();
+    debug!("{:?}", lexed);
     let (parsed, _) = parse(lexed).unwrap();
     assert_eq!(parsed, expected);
 }
@@ -566,12 +657,12 @@ fn test_application_with_endpoint_with_body() {
                     vec![FunctionParameter::new(2, 3)],
                     4,
                     vec![
-                        Expression::Return(
+                        Statement::Expression(Expression::Return(
                             Box::new(Expression::FunctionCall(
                                 1,
                                 vec![Expression::Identifier(2)]
                             ))
-                        )
+                        ))
                     ],
                 ),
             ]
@@ -599,8 +690,8 @@ fn test_application_with_endpoint_with_multiline_body() {
                     vec![FunctionParameter::new(2, 3)],
                     4,
                     vec![
-                        Expression::Identifier(5),
-                        Expression::FunctionCall(
+                        Statement::Expression(Expression::Identifier(5)),
+                        Statement::Expression(Expression::FunctionCall(
                             6,
                             vec![
                                 Expression::Identifier(7),
@@ -611,13 +702,13 @@ fn test_application_with_endpoint_with_multiline_body() {
                                     vec![Expression::Identifier(9)]
                                 )
                             ]
-                        ),
-                        Expression::Return(
+                        )),
+                        Statement::Expression(Expression::Return(
                             Box::new(Expression::FunctionCall(
                                 10,
                                 vec![]
                             ))
-                        )
+                        ))
                     ],
                 ),
             ]
@@ -654,12 +745,12 @@ fn test_application_with_host_port() {
                     vec![FunctionParameter::new(4, 5)],
                     6,
                     vec![
-                        Expression::Return(
+                        Statement::Expression(Expression::Return(
                             Box::new(Expression::FunctionCall(
                                 7,
                                 vec![]
                             ))
-                        )
+                        ))
                     ],
                 ),
             ]
@@ -679,14 +770,14 @@ fn test_serializer_with_method_call() {
             TopLevelDeclaration::Serializer(
                 0,
                 vec![
-                    Expression::MethodCall(
+                    Statement::Expression(Expression::MethodCall(
                         Box::new(Expression::Identifier(1)),
                         2,
                         vec![
                             Expression::Identifier(3),
                             Expression::Identifier(4),
                         ]
-                    )
+                    ))
                 ]
             )
         ]
@@ -705,7 +796,7 @@ fn test_serializer_with_chained_method_call() {
             TopLevelDeclaration::Serializer(
                 0,
                 vec![
-                    Expression::MethodCall(
+                    Statement::Expression(Expression::MethodCall(
                         Box::new(
                             Expression::MethodCall(
                                 Box::new(Expression::Identifier(1,)),
@@ -718,7 +809,7 @@ fn test_serializer_with_chained_method_call() {
                             Expression::Identifier(4),
                             Expression::Identifier(5),
                         ]
-                    )
+                    ))
                 ]
             )
         ]
@@ -744,7 +835,7 @@ fn test_endpoint_returns_method_call() {
                         vec![],
                         2,
                         vec![
-                            Expression::Return(
+                            Statement::Expression(Expression::Return(
                                 Box::new(
                                     Expression::MethodCall(
                                         Box::new(Expression::StringLiteral("Hello World!".to_string())),
@@ -752,7 +843,7 @@ fn test_endpoint_returns_method_call() {
                                         vec![],
                                     )
                                 )
-                            )
+                            ))
                         ]
                     )
                 ]

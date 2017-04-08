@@ -1,0 +1,4 @@
+
+fn conditional(x: String) -> Int
+    if if x then 0 else 1 then 1 elif x then 2 else 3 end
+end
