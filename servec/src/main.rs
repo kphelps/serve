@@ -1,31 +1,9 @@
-#![feature(trace_macros)]
-#![feature(slice_patterns)]
-
-#![cfg_attr(feature = "nightly", feature(rustc_private))]
-extern crate aster;
 #[macro_use] extern crate clap;
 extern crate env_logger;
-#[macro_use] extern crate itertools;
 #[macro_use] extern crate log;
-#[macro_use] extern crate nom;
-extern crate serve_runtime;
-extern crate tempfile;
-#[cfg(feature = "nightly")]
-extern crate syntax;
-#[cfg(not(feature = "nightly"))]
-extern crate syntex_syntax as syntax;
+extern crate libserve;
 
-mod ast;
-//mod codegen;
-mod compiler;
-#[macro_use] mod helpers;
-mod parser;
-mod semantic;
-mod source_file;
-mod static_environment;
-mod symbol;
-
-use compiler::Compiler;
+use libserve::compiler::Compiler;
 use std::env;
 use std::process::exit;
 

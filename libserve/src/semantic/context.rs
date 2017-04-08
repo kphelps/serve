@@ -48,6 +48,7 @@ impl SemanticContext {
         };
         ctx.register_type("String", ServeType::String);
         ctx.register_type("Int", ServeType::Int);
+        ctx.register_type("Unit", ServeType::Unit);
 
         ctx.register_value("GET", ValueEntry::Variable(ServeType::String));
         ctx.register_value("POST", ValueEntry::Variable(ServeType::String));

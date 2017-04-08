@@ -1,0 +1,10 @@
+
+application AppWithEndpoint
+
+    define_action(show, GET, "/")
+
+    endpoint show() -> String
+        "Hello World"
+    end
+
+end

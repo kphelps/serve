@@ -1,4 +1,3 @@
-use env_logger;
 use nom::{alphanumeric, IResult, is_digit};
 use std::str;
 use std::str::FromStr;
@@ -612,7 +611,6 @@ fn test_application_with_host_port() {
 
 #[test]
 fn test_serializer_with_method_call() {
-    env_logger::init().unwrap();
     check_input(
         "
         serializer String

@@ -1,0 +1,9 @@
+application App
+
+    define_action(show, GET, "/")
+
+    endpoint show() -> String
+        123
+    end
+
+end

@@ -1,0 +1,6 @@
+
+application App
+
+    not_a_function()
+
+end

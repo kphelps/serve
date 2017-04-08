@@ -1,0 +1,19 @@
+
+application App
+
+    host("127.0.0.1")
+    port(8080)
+
+    define_action(index, GET, "/")
+    define_action(create, POST, "/")
+
+    endpoint index() -> String
+        "Hello World"
+    end
+
+    endpoint create() -> String
+        "Hello World"
+    end
+
+end
+

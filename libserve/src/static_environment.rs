@@ -6,7 +6,7 @@ pub struct ActionDefinition {
     pub path: String,
 }
 
-struct EnvironmentFrame {
+pub struct EnvironmentFrame {
     actions: HashMap<String, ActionDefinition>,
     serializers: HashMap<String, String>,
 }
