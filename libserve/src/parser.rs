@@ -16,6 +16,7 @@ pub enum Token {
     Let(),
     If(),
     Else(),
+    Then(),
     Elif(),
     End(),
     RightArrow(),
@@ -43,6 +44,7 @@ named!(pub lex<Vec<Token>>,
         kw0!("let", Let) |
         kw0!("if", If) |
         kw0!("else", Else) |
+        kw0!("then", Then) |
         kw0!("elif", Elif) |
         kw0!("end", End) |
         kw0!("fn", Function) |
@@ -169,7 +171,7 @@ impl Parser {
         self.skip(&Token::Serializer())?;
         let name = self.parse_identifier()?;
         self.ignore_newlines();
-        let body = self.until_end(Parser::parse_statement)?;
+        let body = self.parse_block_end()?;
         Ok(TopLevelDeclaration::Serializer(name, body))
     }
 
@@ -209,7 +211,6 @@ impl Parser {
             Parser::parse_let,
             Parser::parse_expression_as_statement
         );
-        self.skip_statement_separator()?;
         result
     }
 
@@ -231,7 +232,7 @@ impl Parser {
         let mut e = parse_first!(self()
             Parser::parse_return,
             Parser::parse_function_call,
-            //Parser::parse_conditional,
+            Parser::parse_conditional,
             Parser::parse_identifier_expression,
             Parser::parse_int_literal,
             Parser::parse_string_literal
@@ -263,11 +264,53 @@ impl Parser {
         self.skip_one_of(&separators)
     }
 
-    //fn parse_conditional(&mut self) -> ParserResult<Expression> {
-        //self.skip(&Token::If())?;
-        //let predicate = self.parse_expression()?;
+    fn parse_block(&mut self, terminators: &Vec<Token>, should_consume: bool)
+        -> ParserResult<Block>
+    {
+        self.separated_with_until_one_of(
+            Parser::parse_statement,
+            &vec![Token::Newline(), Token::Semicolon()],
+            terminators,
+            should_consume
+        )
+    }
 
-    //}
+    fn parse_block_end(&mut self) -> ParserResult<Block> {
+        self.parse_block(&vec![Token::End()], true)
+    }
+
+    fn parse_conditional(&mut self) -> ParserResult<Expression> {
+        self.skip(&Token::If())?;
+        let mut conditional_parts = Vec::new();
+        let predicate = self.parse_expression()?;
+        self.skip_one_of(&vec![Token::Newline(), Token::Semicolon(), Token::Then()])?;
+        let body = self.parse_block(
+            &vec![Token::Elif(), Token::Else(), Token::End()],
+            false,
+        )?;
+        conditional_parts.push(ConditionalSection::new(Some(predicate), body));
+        loop {
+            if self.peek_for(&Token::End()) {
+                self.skip(&Token::End());
+                break
+            } else if self.peek_for(&Token::Else()) {
+                self.skip(&Token::Else());
+                let body = self.until_end(Parser::parse_statement)?;
+                conditional_parts.push(ConditionalSection::new(None, body));
+                break
+            } else {
+                self.skip(&Token::Elif());
+                let predicate = self.parse_expression()?;
+                self.skip_one_of(&vec![Token::Newline(), Token::Semicolon(), Token::Then()])?;
+                let body = self.parse_block(
+                    &vec![Token::Elif(), Token::Else(), Token::End()],
+                    false,
+                )?;
+                conditional_parts.push(ConditionalSection::new(Some(predicate), body));
+            }
+        }
+        Ok(Expression::Conditional(conditional_parts))
+    }
 
     fn parse_int_literal(&mut self) -> ParserResult<Expression> {
         match self.consume()? {
@@ -358,7 +401,7 @@ impl Parser {
         self.ignore_newlines();
         let return_type = self.parse_identifier()?;
         self.ignore_newlines();
-        let body = self.until_end(Parser::parse_statement)?;
+        let body = self.parse_block_end()?;
         Ok(ctor(name, args, return_type, body))
     }
 
@@ -396,6 +439,12 @@ impl Parser {
             .unwrap_or(false)
     }
 
+    fn peek_for_one_of(&mut self, t: &Vec<Token>) -> bool {
+        self.peek()
+            .map(|peeked| t.contains(peeked))
+            .unwrap_or(false)
+    }
+
     fn skip(&mut self, t: &Token) -> ParserResult<()> {
         debug!("skip({:?})", t);
         self.skip_one_of(&vec![t.clone()])
@@ -403,12 +452,13 @@ impl Parser {
 
     fn skip_one_of(&mut self, tokens: &Vec<Token>) -> ParserResult<()> {
         debug!("skip_one_of({:?})", tokens);
-        let found = self.peek()?.clone();
-        if tokens.contains(&found) {
+        let found = self.peek_for_one_of(tokens);
+        if found {
             self.consume();
             Ok(())
         } else {
-            self.error_expected_one_of(found, tokens)
+            let found_token = self.peek()?.clone();
+            self.error_expected_one_of(found_token, tokens)
         }
     }
 
@@ -465,6 +515,30 @@ impl Parser {
         }
     }
 
+    fn many_until_one_of<F, T>(
+        &mut self,
+        f: F,
+        t: &Vec<Token>,
+        should_consume: bool
+    ) -> ParserResult<Vec<T>>
+        where F: Fn(&mut Parser) -> ParserResult<T>
+    {
+        debug!("many_until_one_of()");
+        let mut v = vec![];
+        loop {
+            self.ignore_newlines();
+            if self.peek_for_one_of(t) {
+                return Ok(v);
+            }
+            match f(self) {
+                Ok(value) => {
+                    v.push(value);
+                },
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
     fn separated_with_until<F, T>(&mut self, f: F, sep: Token, end: Token) -> ParserResult<Vec<T>>
         where F: Fn(&mut Parser) -> ParserResult<T>
     {
@@ -486,6 +560,40 @@ impl Parser {
                 return Ok(v);
             }
             self.skip(&sep)?;
+        }
+    }
+
+    fn separated_with_until_one_of<F, T>(
+        &mut self,
+        f: F,
+        sep: &Vec<Token>,
+        end: &Vec<Token>,
+        should_consume: bool,
+    ) -> ParserResult<Vec<T>>
+        where F: Fn(&mut Parser) -> ParserResult<T>
+    {
+        debug!("separated_with_until({:?}, {:?})", sep, end);
+        let mut v = vec![];
+        loop {
+            if self.peek_for_one_of(end) {
+                if should_consume {
+                    self.consume();
+                }
+                return Ok(v);
+            }
+            match f(self) {
+                Ok(value) => {
+                    v.push(value);
+                },
+                Err(e) => return Err(e),
+            };
+            if self.peek_for_one_of(end) {
+                if should_consume {
+                    self.consume();
+                }
+                return Ok(v);
+            }
+            self.skip_one_of(&sep)?;
         }
     }
 

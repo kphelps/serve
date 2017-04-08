@@ -144,6 +144,15 @@ impl SemanticContext {
                     .ok_or(format!("Undeclared identifier '{}'", self.symbols.get_name(name).unwrap()))
                     .and_then(|v| ValueEntry::get_type(&v))
             },
+            Expression::Conditional(ref sections) => {
+                // type check predicates?
+                let ty = self.type_check_statements(sections[0].get_body())?;
+                for section in &sections[1..] {
+                    let section_type = self.type_check_statements(section.get_body())?;
+                    self.check_types(&ty, section_type)?;
+                }
+                Ok(ty)
+            },
             _ => Err("Not implemented yet".to_string()),
         }
     }

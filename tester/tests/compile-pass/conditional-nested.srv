@@ -2,7 +2,7 @@ fn conditional(x: String) -> Int
     if x
         if 0
             0
-        elsif 1
+        elif 1
             2
         else
             1
