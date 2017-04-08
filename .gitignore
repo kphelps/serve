@@ -3,3 +3,4 @@ target/
 Cargo.lock
 serve-test/
 scratch
+notes.md
