@@ -1,0 +1,15 @@
+fn func1(s: String) -> String
+    s
+end
+
+application App
+    define_action(show, GET, "/")
+
+    fn func2(s: String) -> String
+        func1(s)
+    end
+
+    endpoint show() -> String
+        func1(func2("Test"))
+    end
+end

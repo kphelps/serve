@@ -11,6 +11,7 @@ pub enum Token {
     Application(),
     Endpoint(),
     Serializer(),
+    Function(),
     Return(),
     End(),
     RightArrow(),
@@ -33,6 +34,7 @@ named!(pub lex<Vec<Token>>,
         kw0!("serializer", Serializer) |
         kw0!("return", Return) |
         kw0!("end", End) |
+        kw0!("fn", Function) |
         kw0!("->", RightArrow) |
         kw0!("(", OpenParen) |
         kw0!(")", CloseParen) |
@@ -118,7 +120,8 @@ impl Parser {
         debug!("parse_declaration()");
         parse_first!(self()
             Parser::parse_application,
-            Parser::parse_serializer
+            Parser::parse_serializer,
+            Parser::parse_statement_as_declaration
         )
     }
 
@@ -134,19 +137,14 @@ impl Parser {
         debug!("parse_application_context()");
         parse_first!(self()
             Parser::parse_endpoint,
-            Parser::parse_item_function_call
+            Parser::parse_item_function_call,
+            Parser::parse_statement_as_application_statement
         )
     }
 
     fn parse_endpoint(&mut self) -> ParserResult<ApplicationStatement> {
         debug!("parse_endpoint()");
-        self.skip(&Token::Endpoint())?;
-        let name = self.parse_identifier()?;
-        let args = self.parse_function_parameters()?;
-        self.skip(&Token::RightArrow())?;
-        let return_type = self.parse_identifier()?;
-        let body = self.until_end(Parser::parse_expression)?;
-        Ok(ApplicationStatement::Endpoint(name, args, return_type, body))
+        self.parse_function_like(&Token::Endpoint(), ApplicationStatement::Endpoint)
     }
 
     fn parse_serializer(&mut self) -> ParserResult<Declaration> {
@@ -161,6 +159,30 @@ impl Parser {
         let name = self.parse_identifier()?;
         let params = self.parse_function_call_arguments()?;
         Ok(ApplicationStatement::ItemFunctionCall(name, params))
+    }
+
+    fn parse_statement_as_declaration(&mut self)
+        -> ParserResult<Declaration>
+    {
+        self.parse_statement()
+            .map(Declaration::Statement)
+    }
+
+    fn parse_statement_as_application_statement(&mut self)
+        -> ParserResult<ApplicationStatement>
+    {
+        self.parse_statement()
+            .map(ApplicationStatement::Statement)
+    }
+
+    fn parse_statement(&mut self) -> ParserResult<Statement> {
+        parse_first!(self()
+            Parser::parse_function_declaration
+        )
+    }
+
+    fn parse_function_declaration(&mut self) -> ParserResult<Statement> {
+        self.parse_function_like(&Token::Function(), Statement::Function)
     }
 
     fn parse_expression(&mut self) -> ParserResult<Expression> {
@@ -268,6 +290,19 @@ impl Parser {
     fn parse_identifier_expression(&mut self) -> ParserResult<Expression> {
         debug!("parse_identifier_expression()");
         self.parse_identifier().map(Expression::Identifier)
+    }
+
+    fn parse_function_like<F, T>(&mut self, marker: &Token, ctor: F)
+        -> ParserResult<T>
+            where F: Fn(Symbol, Vec<FunctionParameter>, Symbol, Vec<Expression>) -> T
+    {
+        self.skip(marker);
+        let name = self.parse_identifier()?;
+        let args = self.parse_function_parameters()?;
+        self.skip(&Token::RightArrow())?;
+        let return_type = self.parse_identifier()?;
+        let body = self.until_end(Parser::parse_expression)?;
+        Ok(ctor(name, args, return_type, body))
     }
 
     fn consume(&mut self) -> ParserResult<Token> {

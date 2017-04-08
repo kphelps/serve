@@ -41,6 +41,7 @@ pub enum TypeContext {
     Global,
     Application,
     Endpoint,
+    Function,
     Serializer
 }
 

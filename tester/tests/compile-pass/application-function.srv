@@ -1,0 +1,5 @@
+application App
+    fn func(s: String) -> String
+        s
+    end
+end

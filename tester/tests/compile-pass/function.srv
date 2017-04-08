@@ -1,0 +1,3 @@
+fn hello(arg1: String, arg2: Int) -> String
+    arg1
+end

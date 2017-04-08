@@ -1,0 +1,7 @@
+fn func1(i: Int) -> Int
+    i
+end
+
+fn func2(s: String) -> Int
+    func1(s)
+end

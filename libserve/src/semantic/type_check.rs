@@ -8,21 +8,6 @@ use super::type_registrar::TypeRegistrar;
 pub trait TypeChecker {
     fn type_check_declarations(&mut self, decls: &Vec<Declaration>)
         -> SemanticResult;
-    fn type_check_declaration(&mut self, decl: &Declaration)
-        -> SemanticResult;
-    fn type_check_application_statements(&mut self, decl: &Vec<ApplicationStatement>)
-        -> SemanticResult;
-    fn type_check_application_statement(&mut self, decl: &ApplicationStatement)
-        -> SemanticResult;
-    fn type_check_expressions(&mut self, decl: &Vec<Expression>)
-        -> SemanticResult;
-    fn type_check_expression(&mut self, decl: &Expression)
-        -> SemanticResult;
-
-    fn type_check_function_call(&mut self, name: &Symbol, args: &Vec<Expression>)
-        -> SemanticResult;
-    fn check_types(&mut self, expected: &ServeType, actual: ServeType)
-        -> SemanticResult;
 }
 
 impl TypeChecker for SemanticContext {
@@ -34,7 +19,9 @@ impl TypeChecker for SemanticContext {
         }
         Ok(result)
     }
+}
 
+impl SemanticContext {
     fn type_check_declaration(&mut self, decl: &Declaration) -> SemanticResult {
         match *decl {
             Declaration::Application(ref name, ref body) => {
@@ -46,6 +33,9 @@ impl TypeChecker for SemanticContext {
                 self.with_scope(TypeContext::Serializer, |ctx| {
                     ctx.type_check_expressions(body)
                 })
+            },
+            Declaration::Statement(ref stmt) => {
+                self.type_check_statement(stmt)
             },
         }
     }
@@ -66,21 +56,36 @@ impl TypeChecker for SemanticContext {
         match *stmt {
             ApplicationStatement::Endpoint(ref name, ref args, ref return_type_name, ref body) => {
                 // TODO: expose endpoint in the result?
-                let actual_return = self.with_scope(TypeContext::Endpoint, |ctx| {
-                    for arg in args {
-                        let arg_type = ctx.get_type(arg.get_type());
-                        ctx.register_value(
-                            arg.get_name(),
-                            ValueEntry::Variable(arg_type)
-                        );
-                    }
-                    ctx.type_check_expressions(body)
-                })?;
-                let return_type = self.get_type(*return_type_name);
-                self.check_types(&return_type, actual_return)
+                // TODO: check if action exists
+                self.type_check_function_like_decl(
+                    TypeContext::Endpoint,
+                    name,
+                    args,
+                    return_type_name,
+                    body
+                )
             },
             ApplicationStatement::ItemFunctionCall(ref name, ref args) => {
                 self.type_check_function_call(name, args)
+            }
+            ApplicationStatement::Statement(ref stmt) => {
+                self.type_check_statement(stmt)
+            }
+        }
+    }
+
+    fn type_check_statement(&mut self, stmt: &Statement)
+        -> SemanticResult
+    {
+        match *stmt {
+            Statement::Function(ref name, ref args, ref return_type_name, ref body) => {
+                self.type_check_function_like_decl(
+                    TypeContext::Function,
+                    name,
+                    args,
+                    return_type_name,
+                    body
+                )
             }
         }
     }
@@ -139,6 +144,7 @@ impl TypeChecker for SemanticContext {
             .ok_or(format!("Undeclared function '{}'", self.symbols.get_name(name).unwrap()))
             .and_then(|val| {
                 match val {
+                    // hmm... Variable(Function) vs Function?
                     ValueEntry::Variable(ServeType::Function(ref fn_arg_types, ref fn_return)) => {
                         if fn_arg_types == &call_arg_types {
                             Ok(*fn_return.clone())
@@ -150,9 +156,44 @@ impl TypeChecker for SemanticContext {
                             ))
                         }
                     },
+                    ValueEntry::Function(ref fn_arg_types, ref fn_return) => {
+                        if fn_arg_types == &call_arg_types {
+                            Ok(fn_return.clone())
+                        } else {
+                            Err(format!(
+                                "Invalid function call '{:?}'. Expected '{:?}'",
+                                call_arg_types,
+                                fn_arg_types
+                            ))
+                        }
+                    },
                     ref other => Err(format!("Expected callable, found '{:?}'", other)),
                 }
             })
+    }
+
+    fn type_check_function_like_decl(
+        &mut self,
+        scope: TypeContext,
+        name: &Symbol,
+        args: &Vec<FunctionParameter>,
+        return_type_name: &Symbol,
+        body: &Vec<Expression>
+    ) -> SemanticResult
+    {
+        let actual_return = self.with_scope(scope, |ctx| {
+            for arg in args {
+                let arg_type = ctx.get_type(arg.get_type());
+                ctx.register_value(
+                    arg.get_name(),
+                    ValueEntry::Variable(arg_type)
+                );
+            }
+            ctx.type_check_expressions(body)
+        })?;
+        let return_type = self.get_type(*return_type_name);
+        self.check_types(&return_type, actual_return)?;
+        Ok(ServeType::Unit)
     }
 
     fn check_types(&mut self, expected: &ServeType, actual: ServeType)

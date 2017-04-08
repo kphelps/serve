@@ -1,0 +1,7 @@
+fn func1(s: String) -> String
+    s
+end
+
+fn func2(a: String) -> String
+    func1(a)
+end
