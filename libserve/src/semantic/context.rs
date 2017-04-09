@@ -1,3 +1,4 @@
+use serve_runtime;
 use std::collections::HashMap;
 use super::environment::Environment;
 use super::super::ast::*;
@@ -6,11 +7,25 @@ use super::types::{SemanticResult, ServeType, TypeContext, ValueEntry};
 use super::type_registrar::TypeRegistrar;
 
 #[derive(Debug)]
+pub struct BuiltinMetadata {
+    rust_name: String,
+}
+
+impl BuiltinMetadata {
+    pub fn new(rust_name: &str) -> Self {
+        Self {
+            rust_name: rust_name.to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct SemanticContext {
     pub environment: Environment,
     pub symbols: SymbolRegistry,
     pub type_context: Vec<TypeContext>,
     pub type_environments: HashMap<TypeContext, Environment>,
+    pub builtins: HashMap<Symbol, BuiltinMetadata>,
 }
 
 pub trait Symbolizable {
@@ -44,25 +59,28 @@ impl SemanticContext {
             environment: Environment::new(),
             symbols: symbols,
             type_context: Vec::new(),
-            type_environments: HashMap::new()
+            type_environments: HashMap::new(),
+            builtins: HashMap::new(),
         };
-        ctx.register_type("String", ServeType::String);
-        ctx.register_type("Int", ServeType::Int);
         ctx.register_type("Unit", ServeType::Unit);
+        ctx.load_builtins();
 
-        ctx.register_value("GET", ValueEntry::Variable(ServeType::String));
-        ctx.register_value("POST", ValueEntry::Variable(ServeType::String));
+        let type_string = ctx.resolve_builtin_type("String").unwrap();
+        let type_int = ctx.resolve_builtin_type("Int").unwrap();
+
+        ctx.register_value("GET", ValueEntry::Variable(type_string.clone()));
+        ctx.register_value("POST", ValueEntry::Variable(type_string.clone()));
 
         ctx.register_function_in_context(
             TypeContext::Application,
             "host",
-            vec![ServeType::String],
+            vec![type_string.clone()],
             ServeType::Unit,
         );
         ctx.register_function_in_context(
             TypeContext::Application,
             "port",
-            vec![ServeType::Int],
+            vec![type_int.clone()],
             ServeType::Unit,
         );
         ctx.register_function_in_context(
@@ -70,14 +88,37 @@ impl SemanticContext {
             "define_action",
             vec![
             // TODO: Should check the type signature dynamically based on the route.
-                ServeType::Function(Vec::new(), Box::new(ServeType::String)),
-                ServeType::String,
-                ServeType::String
+                ServeType::Function(Vec::new(), Box::new(type_string.clone())),
+                type_string.clone(),
+                type_string.clone(),
             ],
             ServeType::Unit,
         );
 
         ctx
+    }
+
+    pub fn load_builtins(&mut self) {
+        let builtin_registry = serve_runtime::exposed();
+        builtin_registry.each_type(|tipe| {
+            let builtin_symbol = self.get_symbol(tipe.get_serve_name());
+            self.register_type(
+                tipe.get_serve_name(),
+                ServeType::Builtin(builtin_symbol),
+            );
+            let metadata = BuiltinMetadata::new(tipe.get_rust_name());
+            self.builtins.insert(builtin_symbol, metadata);
+        });
+    }
+
+    pub fn resolve_builtin_type(&mut self, name: &str) -> SemanticResult {
+        // Probably should cache this... but premature optimizations /shrug
+        let symbol = self.get_symbol(name);
+        if self.builtins.contains_key(&symbol) {
+            Ok(ServeType::Builtin(symbol))
+        } else {
+            Err(format!("Builtin '{}' not found", name))
+        }
     }
 
     pub fn get_symbol(&mut self, name: &str) -> Symbol {

@@ -5,12 +5,11 @@ pub type SemanticResult = Result<ServeType, String>;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServeType {
     Unit,
-    Int,
-    String,
     Record(String, Vec<ServeType>),
     Array(Box<ServeType>),
     Function(Vec<ServeType>, Box<ServeType>),
     Placeholder(Symbol),
+    Builtin(Symbol),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

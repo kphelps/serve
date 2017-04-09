@@ -134,10 +134,10 @@ impl SemanticContext {
                 self.type_check_expression(return_expr)
             },
             Expression::IntLiteral(_) => {
-                Ok(ServeType::Int)
+                self.resolve_builtin_type("Int")
             },
             Expression::StringLiteral(_) => {
-                Ok(ServeType::String)
+                self.resolve_builtin_type("String")
             },
             Expression::UnitLiteral => {
                 Ok(ServeType::Unit)

@@ -23,6 +23,14 @@ impl ExposedType {
     pub fn get_serve_name<'a>(&'a self) -> &'a str {
         &self.serve_name
     }
+
+    pub fn each_method<F>(&self, mut callback: F)
+        where F: FnMut(&str, &TypeSignature)
+    {
+        for (name, signature) in &self.methods {
+            callback(name, signature);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,6 +67,14 @@ impl ExposedFunctionRegistry {
             local: HashMap::new(),
             scopes: HashMap::new(),
             types: HashMap::new(),
+        }
+    }
+
+    pub fn each_type<F>(&self, mut callback: F)
+        where F: FnMut(&ExposedType)
+    {
+        for (_, tipe) in &self.types {
+            callback(tipe);
         }
     }
 
