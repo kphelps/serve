@@ -1,0 +1,4 @@
+
+fn methodtest(s: String) -> Int
+    s.length()
+end

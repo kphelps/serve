@@ -165,7 +165,33 @@ impl SemanticContext {
                 let rhs_type = self.type_check_expression(rhs)?;
                 self.check_types(&lhs_type, rhs_type)
             },
+            Expression::MethodCall(ref receiver, ref name, ref args) => {
+                let receiver_type = self.type_check_expression(receiver)?;
+                let method_header = self.resolve_method(&receiver_type, name)?.clone();
+                self.type_check_args(method_header.args(), args);
+                Ok(method_header.return_type().clone())
+            },
             _ => Err("Not implemented yet".to_string()),
+        }
+    }
+
+    fn type_check_args(&mut self, expected: &Vec<ServeType>, actual: &Vec<Expression>)
+        -> Result<Vec<ServeType>, String>
+    {
+        let actual_types = actual.iter().fold(Ok(Vec::new()), |mut acc, e| {
+            if acc.is_err() {
+                return acc
+            }
+            self.type_check_expression(e).map(|e_type| {
+                let mut v = acc.unwrap();
+                v.push(e_type);
+                v
+            })
+        })?;
+        if &actual_types == expected {
+            Ok(actual_types)
+        } else {
+            Err(format!("Invalid args '{:?}'. Expected types of '{:?}'", actual, expected))
         }
     }
 

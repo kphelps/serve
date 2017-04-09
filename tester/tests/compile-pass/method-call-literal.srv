@@ -1,0 +1,5 @@
+
+
+fn methodtest(s: String) -> Int
+    "hello".length()
+end

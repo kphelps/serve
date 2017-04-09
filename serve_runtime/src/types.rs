@@ -16,8 +16,8 @@ macro_rules! servify_name {
 }
 
 macro_rules! serve_fn {
-    ($name:ident($($arg:ident: $arg_type:ty),*) -> $return_type:ty $body:block) => {
-        fn $name(env: &mut Env, $($arg: EnvRef<$arg_type>),*) -> EnvRef<$return_type> {
+    ($name:ident($env:ident, $($arg:ident: $arg_type:ty),*) -> $return_type:ty $body:block) => {
+        fn $name($env: &mut Env, $($arg: EnvRef<$arg_type>),*) -> EnvRef<$return_type> {
             $body
         }
     }
@@ -73,13 +73,18 @@ macro_rules! wrap_rust_type {
 }
 
 wrap_rust_type!(String, ServeString, String,
-    string_to_bytes(ServeString) -> ServeBytes,
-    asdasd(ServeString) -> ServeBytes
+    to_bytes(String) -> String,
+    length(String) -> Int
 );
 
-serve_fn!(string_to_bytes(s: ServeString) -> ServeString {
+serve_fn!(string_to_bytes(env, s: ServeString) -> ServeString {
     println!("{:?}", s);
     s
+});
+
+serve_fn!(length(env, s: ServeString) -> ServeInt64 {
+    let value = s.lookup(env).inner.len() as i64;
+    env.allocate(value)
 });
 
 wrap_rust_type!(Int, ServeInt64, i64);

@@ -44,3 +44,28 @@ pub enum TypeContext {
     Serializer
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MethodHeader {
+    uses_self: bool,
+    args: Vec<ServeType>,
+    return_type: ServeType,
+}
+
+impl MethodHeader {
+    pub fn new(args: Vec<ServeType>, return_type: ServeType) -> Self {
+        Self {
+            uses_self: false,
+            args: args,
+            return_type: return_type,
+        }
+    }
+
+    pub fn args(&self) -> &Vec<ServeType> {
+        &self.args
+    }
+
+    pub fn return_type(&self) -> &ServeType {
+        &self.return_type
+    }
+}
+

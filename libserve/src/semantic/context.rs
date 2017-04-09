@@ -3,19 +3,32 @@ use std::collections::HashMap;
 use super::environment::Environment;
 use super::super::ast::*;
 use super::super::symbol::{Symbol, SymbolRegistry};
-use super::types::{SemanticResult, ServeType, TypeContext, ValueEntry};
+use super::types::{
+    MethodHeader,
+    SemanticResult,
+    ServeType,
+    TypeContext,
+    ValueEntry
+};
 use super::type_registrar::TypeRegistrar;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BuiltinMetadata {
     rust_name: String,
+    methods: HashMap<Symbol, MethodHeader>,
 }
 
 impl BuiltinMetadata {
     pub fn new(rust_name: &str) -> Self {
         Self {
             rust_name: rust_name.to_string(),
+            methods: HashMap::new(),
         }
+    }
+
+    pub fn add_method(&mut self, name: Symbol, header: MethodHeader) {
+        let result = self.methods.insert(name, header);
+        assert!(result.is_none());
     }
 }
 
@@ -97,6 +110,21 @@ impl SemanticContext {
             let metadata = BuiltinMetadata::new(tipe.get_rust_name());
             self.builtins.insert(builtin_symbol, metadata);
         });
+        builtin_registry.each_type(|tipe| {
+            let builtin_symbol = self.get_symbol(tipe.get_serve_name());
+            let mut metadata = self.builtins.get(&builtin_symbol).unwrap().clone();
+            tipe.each_method(|name, signature| {
+                let args = signature.args.iter().map(|ty_name| {
+                    self.resolve_builtin_type(ty_name).unwrap()
+                }).collect();
+                let ret = signature.return_type.as_ref()
+                    .map(|ty_name| self.resolve_builtin_type(ty_name).unwrap())
+                    .unwrap_or(ServeType::Unit);
+                let symbol = self.get_symbol(name);
+                metadata.add_method(symbol, MethodHeader::new(args, ret))
+            });
+            self.builtins.insert(builtin_symbol, metadata);
+        });
 
         builtin_registry.each_scope(|scope, name, signature| {
             let ty_ctx = runtime_scope_to_type_context(scope);
@@ -116,6 +144,27 @@ impl SemanticContext {
         });
 
         Ok(())
+    }
+
+    pub fn resolve_method(&mut self, receiver: &ServeType, name: &Symbol)
+        -> Result<&MethodHeader, String>
+    {
+        match *receiver {
+            ServeType::Builtin(ref symbol) => {
+                let receiver_name = self.get_name_from_symbol(*symbol);
+                self.builtins.get(symbol)
+                    .and_then(|builtin| builtin.methods.get(name))
+                    .ok_or(format!("Method '{}' not found for receiver '{:?}'", name, receiver_name))
+            }
+            ref receiver_type => {
+                let method_name = self.get_name_from_symbol(*name);
+                Err(format!(
+                    "Invalid receiver to {:?}: {:?}",
+                    method_name,
+                    receiver_type
+                ))
+            }
+        }
     }
 
     pub fn resolve_builtin_type(&mut self, name: &str) -> SemanticResult {
