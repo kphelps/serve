@@ -33,7 +33,6 @@ impl ConditionalSection {
 pub enum Expression {
     FunctionCall(Symbol, Vec<Expression>),
     MethodCall(Box<Expression>, Symbol, Vec<Expression>),
-    Return(Box<Expression>),
     IntLiteral(i64),
     StringLiteral(String),
     UnitLiteral,
@@ -68,6 +67,7 @@ impl FunctionParameter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Statement {
     Let(Symbol, Expression),
+    Return(Expression),
     Expression(Expression),
 }
 

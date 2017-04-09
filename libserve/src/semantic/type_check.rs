@@ -107,6 +107,9 @@ impl SemanticContext {
                 self.register_value(*name, ValueEntry::Variable(body_type))?;
                 Ok(ServeType::Unit)
             },
+            Statement::Return(ref return_expr) => {
+                self.type_check_expression(return_expr)
+            },
             Statement::Expression(ref inner) => {
                 self.type_check_expression(inner)
             },
@@ -129,9 +132,6 @@ impl SemanticContext {
         match *expr {
             Expression::FunctionCall(ref name, ref args) => {
                 self.type_check_function_call(name, args)
-            },
-            Expression::Return(ref return_expr) => {
-                self.type_check_expression(return_expr)
             },
             Expression::IntLiteral(_) => {
                 self.resolve_builtin_type("Int")

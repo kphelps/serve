@@ -1,0 +1,8 @@
+
+fn other(s: String) -> String
+    s
+end
+
+fn xyz(s: String) -> String
+    other(return s)
+end

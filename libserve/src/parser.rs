@@ -209,6 +209,7 @@ impl Parser {
         self.ignore_newlines();
         let result = parse_first!(self()
             Parser::parse_let,
+            Parser::parse_return,
             Parser::parse_expression_as_statement
         );
         result
@@ -230,7 +231,6 @@ impl Parser {
     fn parse_expression(&mut self) -> ParserResult<Expression> {
         debug!("parse_expression()");
         let mut e = parse_first!(self()
-            Parser::parse_return,
             Parser::parse_function_call,
             Parser::parse_conditional,
             Parser::parse_identifier_expression,
@@ -342,10 +342,10 @@ impl Parser {
         }
     }
 
-    fn parse_return(&mut self) -> ParserResult<Expression> {
+    fn parse_return(&mut self) -> ParserResult<Statement> {
         self.skip(&Token::Return())?;
         let return_expression = self.parse_expression()?;
-        Ok(Expression::Return(Box::new(return_expression)))
+        Ok(Statement::Return(return_expression))
     }
 
     fn parse_method_call(&mut self, receiver: &Expression) -> ParserResult<Expression> {
