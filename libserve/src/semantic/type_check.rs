@@ -148,11 +148,14 @@ impl SemanticContext {
                     .and_then(|v| ValueEntry::get_type(&v))
             },
             Expression::Conditional(ref sections) => {
-                // type check predicates?
+                self.type_check_expression(sections[0].get_predicate())?;
                 let ty = self.with_scope(|ctx| {
                     ctx.type_check_statements(sections[0].get_body())
                 })?;
                 for section in &sections[1..] {
+                    if section.has_predicate() {
+                        self.type_check_expression(section.get_predicate())?;
+                    }
                     let section_type = self.with_scope(|ctx| {
                         ctx.type_check_statements(section.get_body())
                     })?;

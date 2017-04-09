@@ -1,0 +1,10 @@
+fn other(i: Int) -> Int
+    i
+end
+
+fn cdn(s: String) -> String
+    if other(s)
+        return s
+    end
+    s
+end
