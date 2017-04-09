@@ -78,6 +78,24 @@ impl ExposedFunctionRegistry {
         }
     }
 
+    pub fn each_function<F>(&self, mut callback: F)
+        where F: FnMut(&str, &TypeSignature)
+    {
+        for (name, signature) in &self.local {
+            callback(name, signature)
+        }
+    }
+
+    pub fn each_scope<F>(&self, mut callback: F)
+        where F: FnMut(&str, &str, &TypeSignature)
+    {
+        for (scope, scope_registry) in &self.scopes {
+            scope_registry.each_function(|name, signature| {
+                callback(scope, name, signature)
+            })
+        }
+    }
+
     pub fn register_type(&mut self, tipe: &str, rust_type: &str) {
         self.types.entry(tipe.to_string())
             .or_insert_with(|| ExposedType::new(tipe, rust_type));

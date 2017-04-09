@@ -63,7 +63,7 @@ impl SemanticContext {
             builtins: HashMap::new(),
         };
         ctx.register_type("Unit", ServeType::Unit);
-        ctx.load_builtins();
+        ctx.load_builtins().unwrap();
 
         let type_string = ctx.resolve_builtin_type("String").unwrap();
         let type_int = ctx.resolve_builtin_type("Int").unwrap();
@@ -71,18 +71,6 @@ impl SemanticContext {
         ctx.register_value("GET", ValueEntry::Variable(type_string.clone()));
         ctx.register_value("POST", ValueEntry::Variable(type_string.clone()));
 
-        ctx.register_function_in_context(
-            TypeContext::Application,
-            "host",
-            vec![type_string.clone()],
-            ServeType::Unit,
-        );
-        ctx.register_function_in_context(
-            TypeContext::Application,
-            "port",
-            vec![type_int.clone()],
-            ServeType::Unit,
-        );
         ctx.register_function_in_context(
             TypeContext::Application,
             "define_action",
@@ -98,7 +86,7 @@ impl SemanticContext {
         ctx
     }
 
-    pub fn load_builtins(&mut self) {
+    pub fn load_builtins(&mut self) -> Result<(), String> {
         let builtin_registry = serve_runtime::exposed();
         builtin_registry.each_type(|tipe| {
             let builtin_symbol = self.get_symbol(tipe.get_serve_name());
@@ -109,6 +97,25 @@ impl SemanticContext {
             let metadata = BuiltinMetadata::new(tipe.get_rust_name());
             self.builtins.insert(builtin_symbol, metadata);
         });
+
+        builtin_registry.each_scope(|scope, name, signature| {
+            let ty_ctx = runtime_scope_to_type_context(scope);
+            let args = signature.args.iter().map(|ty_name| {
+                self.resolve_builtin_type(ty_name).unwrap()
+            }).collect();
+            let ret = signature.return_type.as_ref()
+                .map(|ty_name| self.resolve_builtin_type(ty_name).unwrap())
+                .unwrap_or(ServeType::Unit);
+
+            self.register_function_in_context(
+                ty_ctx,
+                name,
+                args,
+                ret,
+            ).unwrap();
+        });
+
+        Ok(())
     }
 
     pub fn resolve_builtin_type(&mut self, name: &str) -> SemanticResult {
@@ -151,5 +158,12 @@ impl SemanticContext {
         args.iter().map(FunctionParameter::get_type)
             .map(|fpt| self.get_type(fpt))
             .collect()
+    }
+}
+
+fn runtime_scope_to_type_context(scope: &str) -> TypeContext {
+    match scope {
+        "application" => TypeContext::Application,
+        _ => panic!(format!("Unknown runtime scope: {}", scope))
     }
 }
