@@ -84,14 +84,25 @@ impl SemanticContext {
         self.symbols.get_symbol(name)
     }
 
-    pub fn with_scope<F>(&mut self, type_ctx: TypeContext, f: F) -> SemanticResult
+    pub fn get_name_from_symbol(&mut self, symbol: Symbol) -> Option<String> {
+        self.symbols.get_name(&symbol)
+    }
+
+    pub fn with_context_scope<F>(&mut self, type_ctx: TypeContext, f: F) -> SemanticResult
         where F: Fn(&mut SemanticContext) -> SemanticResult
     {
         self.type_context.push(type_ctx);
+        let result = self.with_scope(f);
+        self.type_context.pop();
+        result
+    }
+
+    pub fn with_scope<F>(&mut self, f: F) -> SemanticResult
+        where F: Fn(&mut SemanticContext) -> SemanticResult
+    {
         self.environment.enter_scope();
         let result = f(self);
         self.environment.leave_scope();
-        self.type_context.pop();
         result
     }
 

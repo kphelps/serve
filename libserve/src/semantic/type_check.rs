@@ -25,12 +25,12 @@ impl SemanticContext {
     fn type_check_top_level_declaration(&mut self, decl: &TopLevelDeclaration) -> SemanticResult {
         match *decl {
             TopLevelDeclaration::Application(ref name, ref body) => {
-                self.with_scope(TypeContext::Application, |ctx| {
+                self.with_context_scope(TypeContext::Application, |ctx| {
                     ctx.type_check_application_statements(body)
                 })
             },
             TopLevelDeclaration::Serializer(ref name, ref body) => {
-                self.with_scope(TypeContext::Serializer, |ctx| {
+                self.with_context_scope(TypeContext::Serializer, |ctx| {
                     ctx.type_check_statements(body)
                 })
             },
@@ -104,7 +104,7 @@ impl SemanticContext {
         match *stmt {
             Statement::Let(ref name, ref body) => {
                 let body_type = self.type_check_expression(body)?;
-                self.register_value(*name, ValueEntry::Variable(body_type));
+                self.register_value(*name, ValueEntry::Variable(body_type))?;
                 Ok(ServeType::Unit)
             },
             Statement::Expression(ref inner) => {
@@ -149,9 +149,13 @@ impl SemanticContext {
             },
             Expression::Conditional(ref sections) => {
                 // type check predicates?
-                let ty = self.type_check_statements(sections[0].get_body())?;
+                let ty = self.with_scope(|ctx| {
+                    ctx.type_check_statements(sections[0].get_body())
+                })?;
                 for section in &sections[1..] {
-                    let section_type = self.type_check_statements(section.get_body())?;
+                    let section_type = self.with_scope(|ctx| {
+                        ctx.type_check_statements(section.get_body())
+                    })?;
                     self.check_types(&ty, section_type)?;
                 }
                 Ok(ty)
@@ -216,7 +220,7 @@ impl SemanticContext {
         body: &Vec<Statement>
     ) -> SemanticResult
     {
-        let actual_return = self.with_scope(scope, |ctx| {
+        let actual_return = self.with_context_scope(scope, |ctx| {
             for arg in args {
                 let arg_type = ctx.get_type(arg.get_type());
                 ctx.register_value(

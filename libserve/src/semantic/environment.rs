@@ -29,7 +29,7 @@ impl Environment {
         self.values.get(symbol)
     }
 
-    pub fn insert_value(&mut self, symbol: Symbol, entry: ValueEntry) {
+    pub fn insert_value(&mut self, symbol: Symbol, entry: ValueEntry) -> Option<ValueEntry> {
         self.values.insert(symbol, entry)
     }
 
@@ -37,7 +37,7 @@ impl Environment {
         self.types.get(symbol)
     }
 
-    pub fn insert_type(&mut self, symbol: Symbol, entry: ServeType) {
+    pub fn insert_type(&mut self, symbol: Symbol, entry: ServeType) -> Option<ServeType> {
         self.types.insert(symbol, entry)
     }
 }

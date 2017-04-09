@@ -1,0 +1,11 @@
+fn conditional(x: String) -> Int
+    let y = "Hello"
+    if x
+        let y = 123
+        y
+    elif x
+        2
+    else
+        3
+    end
+end

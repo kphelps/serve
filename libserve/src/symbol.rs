@@ -44,8 +44,8 @@ impl<T> SymbolBindingTable<T> {
         }
     }
 
-    pub fn insert(&mut self, symbol: Symbol, value: T) {
-        self.current_scope().insert(symbol, value);
+    pub fn insert(&mut self, symbol: Symbol, value: T) -> Option<T> {
+        self.current_scope().insert(symbol, value)
     }
 
     pub fn get(&self, symbol: Symbol) -> Option<&T> {
