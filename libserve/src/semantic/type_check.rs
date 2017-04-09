@@ -160,6 +160,11 @@ impl SemanticContext {
                 }
                 Ok(ty)
             },
+            Expression::Assignment(ref lhs, ref rhs) => {
+                let lhs_type = self.type_check_expression(lhs)?;
+                let rhs_type = self.type_check_expression(rhs)?;
+                self.check_types(&lhs_type, rhs_type)
+            },
             _ => Err("Not implemented yet".to_string()),
         }
     }

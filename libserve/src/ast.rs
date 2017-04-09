@@ -38,7 +38,8 @@ pub enum Expression {
     StringLiteral(String),
     UnitLiteral,
     Identifier(Symbol),
-    Conditional(Vec<ConditionalSection>)
+    Conditional(Vec<ConditionalSection>),
+    Assignment(Box<Expression>, Box<Expression>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

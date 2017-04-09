@@ -256,8 +256,17 @@ impl Parser {
     {
         debug!("parse_expression_with_predecessor({:?})", e);
         parse_first!(self(e)
-            Parser::parse_method_call
+            Parser::parse_method_call,
+            Parser::parse_assignment
         )
+    }
+
+    fn parse_assignment(&mut self, lhs: &Expression)
+        -> ParserResult<Expression>
+    {
+        self.skip(&Token::Equal())?;
+        let rhs = self.parse_expression()?;
+        Ok(Expression::Assignment(Box::new(lhs.clone()), Box::new(rhs)))
     }
 
     fn skip_statement_separator(&mut self) -> ParserResult<()> {
