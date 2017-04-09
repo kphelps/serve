@@ -139,6 +139,9 @@ impl SemanticContext {
             Expression::StringLiteral(_) => {
                 Ok(ServeType::String)
             },
+            Expression::UnitLiteral => {
+                Ok(ServeType::Unit)
+            },
             Expression::Identifier(ref name) => {
                 self.get_value(*name)
                     .ok_or(format!("Undeclared identifier '{}'", self.symbols.get_name(name).unwrap()))

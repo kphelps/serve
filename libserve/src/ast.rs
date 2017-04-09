@@ -36,6 +36,7 @@ pub enum Expression {
     Return(Box<Expression>),
     IntLiteral(i64),
     StringLiteral(String),
+    UnitLiteral,
     Identifier(Symbol),
     Conditional(Vec<ConditionalSection>)
 }

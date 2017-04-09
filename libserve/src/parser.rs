@@ -235,7 +235,8 @@ impl Parser {
             Parser::parse_conditional,
             Parser::parse_identifier_expression,
             Parser::parse_int_literal,
-            Parser::parse_string_literal
+            Parser::parse_string_literal,
+            Parser::parse_unit_literal
         )?;
 
         loop {
@@ -310,6 +311,12 @@ impl Parser {
             }
         }
         Ok(Expression::Conditional(conditional_parts))
+    }
+
+    fn parse_unit_literal(&mut self) -> ParserResult<Expression> {
+        self.skip(&Token::OpenParen())?;
+        self.skip(&Token::CloseParen())?;
+        Ok(Expression::UnitLiteral)
     }
 
     fn parse_int_literal(&mut self) -> ParserResult<Expression> {
