@@ -1,0 +1,7 @@
+
+fn badret(s: String) -> Int
+    if s
+        return s
+    end
+    5
+end
