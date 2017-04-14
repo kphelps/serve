@@ -1,6 +1,7 @@
 use serve_runtime;
 use std::collections::HashMap;
 use super::environment::Environment;
+use super::ir::IRFragment;
 use super::super::ast::*;
 use super::super::symbol::{Symbol, SymbolRegistry};
 use super::types::{
@@ -39,6 +40,7 @@ pub struct SemanticContext {
     pub type_context: Vec<TypeContext>,
     pub type_environments: HashMap<TypeContext, Environment>,
     pub builtins: HashMap<Symbol, BuiltinMetadata>,
+    pub fragments: HashMap<Symbol, IRFragment>,
 }
 
 pub trait Symbolizable {
@@ -74,6 +76,7 @@ impl SemanticContext {
             type_context: Vec::new(),
             type_environments: HashMap::new(),
             builtins: HashMap::new(),
+            fragments: HashMap::new(),
         };
         ctx.register_type("Unit", ServeType::Unit);
         ctx.load_builtins().unwrap();
@@ -101,6 +104,7 @@ impl SemanticContext {
 
     pub fn load_builtins(&mut self) -> Result<(), String> {
         let builtin_registry = serve_runtime::exposed();
+
         builtin_registry.each_type(|tipe| {
             let builtin_symbol = self.get_symbol(tipe.get_serve_name());
             self.register_type(
@@ -110,6 +114,7 @@ impl SemanticContext {
             let metadata = BuiltinMetadata::new(tipe.get_rust_name());
             self.builtins.insert(builtin_symbol, metadata);
         });
+
         builtin_registry.each_type(|tipe| {
             let builtin_symbol = self.get_symbol(tipe.get_serve_name());
             let mut metadata = self.builtins.get(&builtin_symbol).unwrap().clone();
@@ -185,8 +190,8 @@ impl SemanticContext {
         self.symbols.get_name(&symbol)
     }
 
-    pub fn with_context_scope<F>(&mut self, type_ctx: TypeContext, f: F) -> SemanticResult
-        where F: Fn(&mut SemanticContext) -> SemanticResult
+    pub fn with_context_scope<F, R>(&mut self, type_ctx: TypeContext, f: F) -> R
+        where F: FnMut(&mut SemanticContext) -> R
     {
         self.type_context.push(type_ctx);
         let result = self.with_scope(f);
@@ -194,8 +199,8 @@ impl SemanticContext {
         result
     }
 
-    pub fn with_scope<F>(&mut self, f: F) -> SemanticResult
-        where F: Fn(&mut SemanticContext) -> SemanticResult
+    pub fn with_scope<F, R>(&mut self, mut f: F) -> R
+        where F: FnMut(&mut SemanticContext) -> R
     {
         self.environment.enter_scope();
         let result = f(self);

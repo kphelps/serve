@@ -4,6 +4,7 @@ pub type Symbol = usize;
 
 #[derive(Debug)]
 pub struct SymbolRegistry {
+    counter: usize,
     symbolsToName: HashMap<Symbol, String>,
     namesToSymbol: HashMap<String, Symbol>,
 }
@@ -11,9 +12,16 @@ pub struct SymbolRegistry {
 impl SymbolRegistry {
     pub fn new() -> SymbolRegistry {
         Self {
+            counter: 0,
             symbolsToName: HashMap::new(),
             namesToSymbol: HashMap::new(),
         }
+    }
+
+    pub fn get_temp(&mut self) -> Symbol {
+        self.counter += 1;
+        let current = self.counter;
+        self.get_symbol(format!("temp{}", current))
     }
 
     pub fn get_symbol<S>(&mut self, name: S) -> Symbol

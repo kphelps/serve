@@ -1,28 +1,42 @@
 use super::context::SemanticContext;
 use super::super::ast::*;
 use super::super::symbol::Symbol;
+use super::ir::*;
 use super::types::{SemanticResult, ServeType, TypeContext, ValueEntry};
 use super::type_registrar::TypeRegistrar;
 
+type TypeResult<T> = Result<(T, ServeType), String>;
 
 pub trait TypeChecker {
-    fn type_check_top_level_declarations(&mut self, decls: &Vec<TopLevelDeclaration>)
-        -> SemanticResult;
+    fn type_check_top_level_declarations(
+        &mut self,
+        decls: &Vec<TopLevelDeclaration>
+    ) -> TypeResult<IRStatement>;
 }
 
 impl TypeChecker for SemanticContext {
 
-    fn type_check_top_level_declarations(&mut self, decls: &Vec<TopLevelDeclaration>) -> SemanticResult {
+    fn type_check_top_level_declarations(
+        &mut self,
+        decls: &Vec<TopLevelDeclaration>
+    ) -> TypeResult<IRStatement>
+    {
         let mut result = ServeType::Unit;
+        let mut ir_stmts = Vec::new();
         for decl in decls {
-            result = self.type_check_top_level_declaration(decl)?;
+            let (ir_stmt, result) = self.type_check_top_level_declaration(decl)?;
+            ir_stmts.push(ir_stmt);
         }
-        Ok(result)
+        Ok((self.sequence_statements(ir_stmts), result))
     }
 }
 
 impl SemanticContext {
-    fn type_check_top_level_declaration(&mut self, decl: &TopLevelDeclaration) -> SemanticResult {
+    fn type_check_top_level_declaration(
+        &mut self,
+        decl: &TopLevelDeclaration
+    ) -> TypeResult<IRStatement>
+    {
         match *decl {
             TopLevelDeclaration::Application(ref name, ref body) => {
                 self.with_context_scope(TypeContext::Application, |ctx| {
@@ -41,22 +55,26 @@ impl SemanticContext {
     }
 
     fn type_check_application_statements(&mut self, stmts: &Vec<ApplicationStatement>)
-        -> SemanticResult
+        -> TypeResult<IRStatement>
     {
         let mut result = ServeType::Unit;
+        let mut ir_stmts = Vec::new();
         for stmt in stmts {
-            result = self.type_check_application_statement(stmt)?;
+            let (ir_stmt, result) = self.type_check_application_statement(stmt)?;
+            ir_stmts.push(ir_stmt);
         }
-        Ok(result)
+        Ok((self.sequence_statements(ir_stmts), result))
     }
 
     fn type_check_application_statement(&mut self, stmt: &ApplicationStatement)
-        -> SemanticResult
+        -> TypeResult<IRStatement>
     {
         match *stmt {
             ApplicationStatement::Endpoint(ref name, ref args, ref return_type_name, ref body) => {
                 // TODO: expose endpoint in the result?
                 // TODO: check if action exists
+                // TODO: transform endpoint registration into IR
+                // TODO: Expand serializer based on types
                 self.type_check_function_like_decl(
                     TypeContext::Endpoint,
                     name,
@@ -67,15 +85,16 @@ impl SemanticContext {
             },
             ApplicationStatement::ItemFunctionCall(ref name, ref args) => {
                 self.type_check_function_call(name, args)
-            }
+                    .map(|(ir, tipe)| (self.transform_expression_to_statement(ir), tipe))
+            },
             ApplicationStatement::Declaration(ref stmt) => {
                 self.type_check_declaration(stmt)
-            }
+            },
         }
     }
 
     fn type_check_declaration(&mut self, stmt: &Declaration)
-        -> SemanticResult
+        -> TypeResult<IRStatement>
     {
         match *stmt {
             Declaration::Function(ref name, ref args, ref return_type_name, ref body) => {
@@ -91,158 +110,151 @@ impl SemanticContext {
     }
 
     fn type_check_statements(&mut self, stmts: &Vec<Statement>)
-        -> SemanticResult
+        -> TypeResult<IRStatement>
     {
         let mut result = ServeType::Unit;
+        let mut ir_stmts = Vec::new();
         for stmt in stmts {
-            result = self.type_check_statement(stmt)?;
+            let (ir_stmt, stmt_result) = self.type_check_statement(stmt)?;
+            ir_stmts.push(ir_stmt);
+            result = stmt_result;
         }
-        Ok(result)
+        Ok((self.sequence_statements(ir_stmts), result))
     }
 
-    fn type_check_statement(&mut self, stmt: &Statement) -> SemanticResult {
+    fn type_check_statement(&mut self, stmt: &Statement)
+        -> TypeResult<IRStatement>
+    {
         match *stmt {
             Statement::Let(ref name, ref body) => {
-                let body_type = self.type_check_expression(body)?;
+                let (body_ir, body_type) = self.type_check_expression(body)?;
                 self.register_value(*name, ValueEntry::Variable(body_type))?;
-                Ok(ServeType::Unit)
+                Ok((self.transform_let(name, body_ir), ServeType::Unit))
             },
             Statement::Return(ref return_expr) => {
-                self.type_check_expression(return_expr)
+                let (child, tipe) = self.type_check_expression(return_expr)?;
+                Ok((self.transform_return(child), tipe))
             },
             Statement::Expression(ref inner) => {
                 self.type_check_expression(inner)
+                    .map(|(ir, tipe)| (self.transform_expression_to_statement(ir), tipe))
             },
         }
     }
 
     fn type_check_expressions(&mut self, exprs: &Vec<Expression>)
-        -> SemanticResult
+        -> TypeResult<IRStatement>
     {
         let mut result = ServeType::Unit;
+        let mut ir_exprs = Vec::new();
         for expr in exprs {
-            result = self.type_check_expression(expr)?;
+            let (ir_expr, result) = self.type_check_expression(expr)?;
+            ir_exprs.push(ir_expr);
         }
-        Ok(result)
+        Ok((self.sequence_expressions(ir_exprs), result))
     }
 
     fn type_check_expression(&mut self, expr: &Expression)
-        -> SemanticResult
+        -> TypeResult<IRExpression>
     {
         match *expr {
             Expression::FunctionCall(ref name, ref args) => {
                 self.type_check_function_call(name, args)
             },
-            Expression::IntLiteral(_) => {
-                self.resolve_builtin_type("Int")
+            Expression::IntLiteral(ref value) => {
+                let tipe = self.resolve_builtin_type("Int")?;
+                Ok((self.transform_int(*value), tipe))
             },
-            Expression::StringLiteral(_) => {
-                self.resolve_builtin_type("String")
+            Expression::StringLiteral(ref value) => {
+                let tipe = self.resolve_builtin_type("String")?;
+                Ok((self.transform_string(value), tipe))
             },
             Expression::UnitLiteral => {
-                Ok(ServeType::Unit)
+                Ok((self.transform_unit(), ServeType::Unit))
             },
             Expression::Identifier(ref name) => {
+                let ir_id = self.transform_identifier(name);
                 self.get_value(*name)
                     .ok_or(format!("Undeclared identifier '{}'", self.symbols.get_name(name).unwrap()))
                     .and_then(|v| ValueEntry::get_type(&v))
+                    .map(|t| (ir_id, t))
             },
             Expression::Conditional(ref sections) => {
-                self.type_check_expression(sections[0].get_predicate())?;
-                let ty = self.with_scope(|ctx| {
+                let (pred0, _) = self.type_check_expression(sections[0].get_predicate())?;
+                let (stmt0, ty) = self.with_scope(|ctx| {
                     ctx.type_check_statements(sections[0].get_body())
                 })?;
+                let mut parts = vec![(Some(pred0), stmt0)];
                 for section in &sections[1..] {
-                    if section.has_predicate() {
-                        self.type_check_expression(section.get_predicate())?;
-                    }
-                    let section_type = self.with_scope(|ctx| {
+                    let ir_pred = if section.has_predicate() {
+                        let (ir, _) = self.type_check_expression(section.get_predicate())?;
+                        Some(ir)
+                    } else {
+                        None
+                    };
+                    let (ir_stmt, section_type) = self.with_scope(|ctx| {
                         ctx.type_check_statements(section.get_body())
                     })?;
                     self.check_types(&ty, section_type)?;
+                    parts.push((ir_pred, ir_stmt));
                 }
-                Ok(ty)
+                Ok((self.transform_conditional(parts), ty))
             },
             Expression::Assignment(ref lhs, ref rhs) => {
-                let lhs_type = self.type_check_expression(lhs)?;
-                let rhs_type = self.type_check_expression(rhs)?;
-                self.check_types(&lhs_type, rhs_type)
+                let (lhs_ir, lhs_type) = self.type_check_expression(lhs)?;
+                let (rhs_ir, rhs_type) = self.type_check_expression(rhs)?;
+                Ok((
+                    self.transform_assignment(lhs_ir, rhs_ir),
+                    self.check_types(&lhs_type, rhs_type)?
+                ))
             },
             Expression::MethodCall(ref receiver, ref name, ref args) => {
-                let receiver_type = self.type_check_expression(receiver)?;
+                let (ir_receiver, receiver_type) = self.type_check_expression(receiver)?;
                 let method_header = self.resolve_method(&receiver_type, name)?.clone();
-                self.type_check_args(method_header.args(), args);
-                Ok(method_header.return_type().clone())
+                let (ir_args, _) = self.type_check_args(method_header.args(), args)?;
+                Ok((
+                    self.transform_method_call(receiver_type, ir_receiver, name, ir_args),
+                    method_header.return_type().clone()
+                ))
             },
             _ => Err("Not implemented yet".to_string()),
         }
     }
 
     fn type_check_args(&mut self, expected: &Vec<ServeType>, actual: &Vec<Expression>)
-        -> Result<Vec<ServeType>, String>
+        -> Result<(Vec<IRExpression>, Vec<ServeType>), String>
     {
-        let actual_types = actual.iter().fold(Ok(Vec::new()), |mut acc, e| {
-            if acc.is_err() {
-                return acc
-            }
-            self.type_check_expression(e).map(|e_type| {
-                let mut v = acc.unwrap();
-                v.push(e_type);
-                v
-            })
-        })?;
+        let mut ir = Vec::new();
+        let mut actual_types = Vec::new();
+        for e in actual {
+            let (e_ir, e_type) = self.type_check_expression(e)?;
+            ir.push(e_ir);
+            actual_types.push(e_type);
+        }
         if &actual_types == expected {
-            Ok(actual_types)
+            Ok((ir, actual_types))
         } else {
             Err(format!("Invalid args '{:?}'. Expected types of '{:?}'", actual, expected))
         }
     }
 
     fn type_check_function_call(&mut self, name: &Symbol, args: &Vec<Expression>)
-        -> SemanticResult
+        -> TypeResult<IRExpression>
     {
-        let call_arg_types = args.iter()
-            .fold(Ok(Vec::new()), |acc, arg| {
-                if acc.is_err() {
-                    return acc
-                }
-                self.type_check_expression(arg)
-                    .map(|expr_arg| {
-                        let mut v = acc.unwrap();
-                        v.push(expr_arg);
-                        v
-                    })
-            })?;
-        self.get_value(*name)
-            .ok_or(format!("Undeclared function '{}'", self.symbols.get_name(name).unwrap()))
-            .and_then(|val| {
-                match val {
-                    // hmm... Variable(Function) vs Function?
-                    ValueEntry::Variable(ServeType::Function(ref fn_arg_types, ref fn_return)) => {
-                        if fn_arg_types == &call_arg_types {
-                            Ok(*fn_return.clone())
-                        } else {
-                            Err(format!(
-                                "Invalid function call '{:?}'. Expected '{:?}'",
-                                call_arg_types,
-                                fn_arg_types
-                            ))
-                        }
-                    },
-                    ValueEntry::Function(ref fn_arg_types, ref fn_return) => {
-                        if fn_arg_types == &call_arg_types {
-                            Ok(fn_return.clone())
-                        } else {
-                            Err(format!(
-                                "Invalid function call '{:?}'. Expected '{:?}'",
-                                call_arg_types,
-                                fn_arg_types
-                            ))
-                        }
-                    },
-                    ref other => Err(format!("Expected callable, found '{:?}'", other)),
-                }
-            })
+        let fn_val = self.get_value(*name)
+            .ok_or(format!("Undeclared function '{}'", self.symbols.get_name(name).unwrap()))?;
+        match fn_val {
+            // hmm... Variable(Function) vs Function?
+            ValueEntry::Variable(ServeType::Function(ref fn_arg_types, ref fn_return)) => {
+                let (args_ir, arg_types) = self.type_check_args(fn_arg_types, args)?;
+                Ok((self.transform_call(name, args_ir), *fn_return.clone()))
+            },
+            ValueEntry::Function(ref fn_arg_types, ref fn_return) => {
+                let (args_ir, arg_types) = self.type_check_args(fn_arg_types, args)?;
+                Ok((self.transform_call(name, args_ir), fn_return.clone()))
+            },
+            ref other => Err(format!("Expected callable, found '{:?}'", other)),
+        }
     }
 
     fn type_check_function_like_decl(
@@ -252,11 +264,13 @@ impl SemanticContext {
         args: &Vec<FunctionParameter>,
         return_type_name: &Symbol,
         body: &Vec<Statement>
-    ) -> SemanticResult
+    ) -> TypeResult<IRStatement>
     {
-        let actual_return = self.with_context_scope(scope, |ctx| {
+        let mut arg_types = Vec::new();
+        let (body_ir, actual_return) = self.with_context_scope(scope, |ctx| {
             for arg in args {
                 let arg_type = ctx.get_type(arg.get_type());
+                arg_types.push(arg_type.clone());
                 ctx.register_value(
                     arg.get_name(),
                     ValueEntry::Variable(arg_type)
@@ -266,7 +280,15 @@ impl SemanticContext {
         })?;
         let return_type = self.get_type(*return_type_name);
         self.check_types(&return_type, actual_return)?;
-        Ok(ServeType::Unit)
+        Ok((
+            self.transform_function_decl(
+                name,
+                &arg_types,
+                &return_type,
+                body_ir
+            ),
+            ServeType::Unit
+        ))
     }
 
     fn check_types(&mut self, expected: &ServeType, actual: ServeType)
@@ -275,7 +297,8 @@ impl SemanticContext {
         if expected == &actual {
             Ok(actual)
         } else {
-            Err(format!("Expected '{:?}', found '{:?}'", expected, actual))
+            let out = Err(format!("Expected '{:?}', found '{:?}'", expected, actual));
+            out
         }
     }
 }

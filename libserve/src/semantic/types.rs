@@ -54,7 +54,7 @@ pub struct MethodHeader {
 impl MethodHeader {
     pub fn new(args: Vec<ServeType>, return_type: ServeType) -> Self {
         Self {
-            uses_self: false,
+            uses_self: true,
             args: args,
             return_type: return_type,
         }

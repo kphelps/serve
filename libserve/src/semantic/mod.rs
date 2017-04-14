@@ -7,6 +7,7 @@ use super::ast::AST;
 
 mod context;
 mod environment;
+mod ir;
 mod scan;
 mod type_check;
 mod type_registrar;
@@ -18,5 +19,6 @@ pub fn type_check(
 ) -> SemanticResult {
     let mut ctx = SemanticContext::new(symbols);
     ctx.scan_top_level_declarations(&ast);
-    ctx.type_check_top_level_declarations(&ast)
+    let (_, out) = ctx.type_check_top_level_declarations(&ast)?;
+    Ok(out)
 }

@@ -73,8 +73,8 @@ macro_rules! wrap_rust_type {
 }
 
 wrap_rust_type!(String, ServeString, String,
-    to_bytes(String) -> String,
-    length(String) -> Int
+    to_bytes() -> String,
+    length() -> Int
 );
 
 serve_fn!(string_to_bytes(env, s: ServeString) -> ServeString {
